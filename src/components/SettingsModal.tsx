@@ -1,0 +1,183 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
+import {
+  X,
+  Settings as SettingsIcon,
+  Save,
+  Bot,
+  User,
+  CheckCircle2,
+  BrainCircuit,
+} from 'lucide-react';
+import { useSettings, Settings } from '../hooks/useSettings';
+import { useLanguage } from '../hooks/useLanguage';
+import { GeneralForm } from './settings/GeneralForm';
+import { ProviderSelector } from './settings/ProviderSelector';
+import DeepAnalysisSettings from './settings/DeepAnalysisSettings';
+
+interface SettingsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+type Tab = 'general' | 'providers' | 'masters';
+
+/**
+ * 升级后的设置中心 - 参考 Cherry Studio 风格
+ * 采用侧边栏导航 + 内容区的现代桌面端布局
+ */
+export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+  const { settings, updateSettings, isLoading } = useSettings();
+  const [localSettings, setLocalSettings] = useState<Settings>(settings);
+  const [appVersion, setAppVersion] = useState('');
+  const [activeTab, setActiveTab] = useState<Tab>('providers');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const { t } = useLanguage();
+  const saveResetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => {
+    setLocalSettings(settings);
+  }, [settings]);
+
+  // 卸载时撤掉未触发的复位计时器，不给已卸载组件补一刀 setState
+  useEffect(() => () => clearTimeout(saveResetTimer.current), []);
+
+  useEffect(() => {
+    // 浏览器 dev 模式下无 Tauri API，读不到版本号属预期；留痕便于排查真实故障，不打断 UI
+    getVersion()
+      .then(setAppVersion)
+      .catch((e) => console.warn('[SettingsModal] 读取应用版本号失败:', e));
+  }, []);
+
+  if (!isOpen) return null;
+
+  const handleSave = async () => {
+    setSaveStatus('saving');
+    await updateSettings(localSettings);
+    setSaveStatus('saved');
+    // 连续保存时先撤上一个计时器，否则旧计时器会提前把本次「已保存」打回 idle
+    clearTimeout(saveResetTimer.current);
+    saveResetTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
+      <div className="bg-panel border border-white/10 rounded-2xl shadow-2xl w-full max-w-3xl h-[550px] overflow-hidden flex animate-in zoom-in-95 duration-200">
+        {/* 左侧侧边栏导航 */}
+        <aside className="w-56 bg-black/20 border-r border-white/5 p-4 flex flex-col gap-1">
+          <div className="flex items-center gap-3 px-3 py-4 mb-4">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+              <SettingsIcon className="w-4 h-4 text-emerald-500" />
+            </div>
+            <span className="font-bold text-gray-100">{t('settings_title')}</span>
+          </div>
+
+          {[
+            { id: 'general', label: t('tab_general'), icon: User },
+            { id: 'providers', label: t('tab_providers'), icon: Bot },
+            { id: 'masters', label: t('tab_masters'), icon: BrainCircuit },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as Tab)}
+              className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition-all ${
+                activeTab === tab.id
+                  ? 'bg-emerald-500/10 text-emerald-400 font-medium'
+                  : 'text-gray-400 hover:bg-white/5 hover:text-gray-100'
+              }`}
+            >
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          ))}
+
+          <div className="mt-auto p-4 text-[10px] text-gray-600 font-mono">
+            Solanna {appVersion ? `v${appVersion}` : ''}
+          </div>
+        </aside>
+
+        {/* 右侧主内容区 */}
+        <section className="flex-1 flex flex-col bg-panel">
+          {/* 内容头部 */}
+          <header className="px-8 py-5 flex items-center justify-between border-b border-white/5 bg-panel/50 backdrop-blur-sm sticky top-0 z-10">
+            <h3 className="text-base font-semibold text-gray-100">
+              {
+                {
+                  general: t('title_general'),
+                  providers: t('title_providers'),
+                  masters: t('title_masters'),
+                }[activeTab]
+              }
+            </h3>
+            <button
+              onClick={onClose}
+              className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </header>
+
+          {/* 表单内容 */}
+          <div className="flex-1 p-8 overflow-y-auto scrollbar-hide space-y-8 animate-slide-in">
+            {activeTab === 'general' ? (
+              <GeneralForm
+                settings={localSettings}
+                onChange={(s) => setLocalSettings({ ...localSettings, ...s })}
+              />
+            ) : activeTab === 'providers' ? (
+              <ProviderSelector
+                settings={localSettings}
+                onChange={(s) => setLocalSettings({ ...localSettings, ...s })}
+              />
+            ) : (
+              <DeepAnalysisSettings
+                masterAnalysis={localSettings.masterAnalysis}
+                selectedMasters={localSettings.selectedMasters}
+                onMasterAnalysisChange={(enabled) =>
+                  setLocalSettings({ ...localSettings, masterAnalysis: enabled })
+                }
+                onSelectedMastersChange={(ids) =>
+                  setLocalSettings({ ...localSettings, selectedMasters: ids })
+                }
+              />
+            )}
+          </div>
+
+          {/* 底部保存栏 */}
+          <footer className="px-8 py-5 border-t border-white/5 bg-black/10 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {saveStatus === 'saving' && (
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <div className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                  {t('saving')}
+                </div>
+              )}
+              {saveStatus === 'saved' && (
+                <div className="flex items-center gap-2 text-xs text-emerald-500 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4" />
+                  {t('saved')}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={onClose}
+                className="px-5 py-2 text-sm font-medium text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-all"
+              >
+                {t('close')}
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={isLoading || saveStatus === 'saving'}
+                className="flex items-center gap-2 px-6 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-lg shadow-emerald-900/20 transition-all active:scale-95 disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                {t('save_changes')}
+              </button>
+            </div>
+          </footer>
+        </section>
+      </div>
+    </div>
+  );
+};

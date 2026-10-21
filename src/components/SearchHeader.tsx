@@ -1,0 +1,186 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Search,
+  Loader2,
+  Settings as SettingsIcon,
+  SlidersHorizontal,
+  Briefcase,
+} from 'lucide-react';
+import { useLanguage } from '../hooks/useLanguage';
+import { useStockSearch } from '../hooks/useStockSearch';
+import { formatServiceError } from '../lib/service-errors';
+import { StockSearchResult } from '../../shared/types';
+
+interface SearchHeaderProps {
+  onSearch: (symbol: string) => void;
+  loading: boolean;
+  onOpenSettings: () => void;
+  onOpenScreener: () => void;
+  onOpenPortfolio: () => void;
+  stepLabel: string;
+}
+
+/**
+ * SearchHeader 组件包含顶部的搜索表单、智能选股入口和系统设置入口
+ */
+const SearchHeader: React.FC<SearchHeaderProps> = ({
+  onSearch,
+  loading,
+  onOpenSettings,
+  onOpenScreener,
+  onOpenPortfolio,
+  stepLabel,
+}) => {
+  const { t } = useLanguage();
+  const [searchSymbol, setSearchSymbol] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const { results, error, isSearching } = useStockSearch(searchSymbol);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // 有结果或有错误就展开，两者皆空则收起；点击外部 / 选中 / 提交仍可手动收起
+  useEffect(() => {
+    setShowDropdown(results.length > 0 || error !== null);
+  }, [results, error]);
+
+  // 点击外部关闭下拉框
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // 处理搜索提交
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchSymbol.trim()) {
+      onSearch(searchSymbol.trim().toUpperCase());
+      setShowDropdown(false);
+    }
+  };
+
+  // 选择搜索结果
+  const handleSelect = (item: StockSearchResult) => {
+    setSearchSymbol(item.code);
+    onSearch(item.fullCode || item.code);
+    setShowDropdown(false);
+  };
+
+  return (
+    <header className="h-16 border-b border-white/10 flex items-center justify-between px-6 bg-panel shrink-0 z-10">
+      <form onSubmit={handleSubmit} className="flex items-center w-full max-w-2xl gap-4">
+        <div className="relative w-full group" ref={dropdownRef}>
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-emerald-500 transition-colors" />
+          <input
+            type="text"
+            value={searchSymbol}
+            onChange={(e) => setSearchSymbol(e.target.value)}
+            onFocus={() => results.length > 0 && setShowDropdown(true)}
+            placeholder={t('search_placeholder')}
+            className="w-full bg-background border border-white/10 rounded-lg pl-10 pr-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+          />
+          {isSearching && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 animate-spin" />
+          )}
+
+          {/* 搜索建议下拉列表 */}
+          {showDropdown && (
+            <div className="absolute top-full left-0 w-full mt-2 bg-panel border border-white/10 rounded-lg shadow-2xl overflow-hidden z-50">
+              {error !== null && (
+                <div className="px-4 py-3 text-sm text-rose-400">
+                  {formatServiceError(error, t, 'search_error')}
+                </div>
+              )}
+              <div className="max-h-60 overflow-y-auto">
+                {results.map((item, index) => (
+                  <div
+                    key={`${item.code}-${index}`}
+                    onClick={() => handleSelect(item)}
+                    className="px-4 py-3 hover:bg-white/5 cursor-pointer border-b border-white/5 last:border-0 flex items-center justify-between group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex flex-col">
+                        <span className="text-white font-medium group-hover:text-emerald-400 transition-colors">
+                          {item.name}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded border border-white/10 text-gray-500 bg-white/5">
+                            {item.type}
+                          </span>
+                          <span className="text-xs text-gray-400 font-mono">{item.code}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {item.price !== undefined && (
+                      <div className="flex flex-col items-end shrink-0">
+                        <span className="text-sm font-mono font-bold text-white">
+                          {item.price.toFixed(2)}
+                        </span>
+                        <span
+                          className={`text-[10px] font-mono ${
+                            (item.changePercent ?? 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'
+                          }`}
+                        >
+                          {(item.changePercent ?? 0) >= 0 ? '+' : ''}
+                          {(item.changePercent ?? 0).toFixed(2)}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <button
+          type="submit"
+          disabled={loading}
+          className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:opacity-50 text-white font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap"
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          {loading ? t('analyzing') : t('start_analysis')}
+        </button>
+        {/* 在搜索栏显示当前分析进度 */}
+        {loading && (
+          <span className="text-xs text-emerald-500 animate-pulse hidden xl:inline truncate max-w-[200px]">
+            {stepLabel}
+          </span>
+        )}
+      </form>
+
+      {/* 右侧入口：智能选股 + 系统设置 */}
+      <div className="flex items-center gap-1">
+        {/* 我的持仓入口 */}
+        <button
+          onClick={onOpenPortfolio}
+          className="p-2 hover:bg-white/5 rounded-full transition-colors group"
+          title={t('holdings_open')}
+        >
+          <Briefcase className="w-5 h-5 text-gray-400 group-hover:text-emerald-400 transition-colors" />
+        </button>
+        {/* 智能选股入口 */}
+        <button
+          onClick={onOpenScreener}
+          className="p-2 hover:bg-white/5 rounded-full transition-colors group"
+          title={t('screener_open')}
+        >
+          <SlidersHorizontal className="w-5 h-5 text-gray-400 group-hover:text-emerald-400 transition-colors" />
+        </button>
+        {/* 系统设置入口 */}
+        <button
+          onClick={onOpenSettings}
+          className="p-2 hover:bg-white/5 rounded-full transition-colors group"
+          title={t('system_settings')}
+        >
+          <SettingsIcon className="w-5 h-5 text-gray-400 group-hover:text-white group-hover:rotate-45 transition-all duration-300" />
+        </button>
+      </div>
+    </header>
+  );
+};
+
+export default SearchHeader;

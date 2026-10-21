@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Solanna",
+  "version": "0.17.1",
+  "identifier": "com.truongdatdev.solanna",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "bun run build:frontend",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Solanna",
+        "width": 800,
+        "height": 600
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' ipc: http://ipc.localhost; frame-src https://s.tradingview.com"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "publisher": "truongdatdev",
+    "copyright": "Copyright © 2026 truongdatdev",
+    "homepage": "https://github.com/truongdatdev/solanna",
+    "license": "MIT",
+    "shortDescription": "AI equity research desk",
+    "longDescription": "Solanna gathers live news, prices, fundamentals and money flow for US stocks and Chinese A-shares, then layers AI analysis on top.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "entitlements": "./Entitlements.plist",
+      "signingIdentity": null,
+      "hardenedRuntime": true,
+      "minimumSystemVersion": "10.13"
+    },
+    "externalBin": [
+      "bin/solanna-backend"
+    ],
+    "resources": [
+      "../sidecar/browsers.json"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/truongdatdev/solanna/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU5MUI1NjJEMkZCMTFBRTIKUldUaUdyRXZMVlliV2Fvajd3U0RxSi9Mdk01VENOOXJvb2s4OGhlTWdyWDI4QWRTRmVnWUdkWU0K"
+    }
+  }
+}

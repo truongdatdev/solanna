@@ -1,0 +1,728 @@
+# Changelog
+
+All notable changes to Solanna will be documented in this file.
+
+## [Unreleased]
+
+## [0.17.1] - 2026-10-08
+
+### Fixed
+
+- **桌面端 SQLite 写入自引入起全部被拒**：capabilities 只授予了 `sql:default`，而 tauri-plugin-sql 的该集合仅含 load / select / close。前端 6 处 `db.execute` 因此全部报 `sql.execute not allowed`：分析历史、大师 signal（虚拟组合命中率与净值曲线的数据源）静默丢失，添加持仓报错。补授 `sql:allow-execute`，并新增跨层契约用例 `shared/capabilities.test.ts`，校验前端用到的每个 sql 命令均已授权。此前浏览器 dev 走 mock、单测 mock 掉 DB，任何自动化测试都看不见这条链路。
+- **Google 新闻搜索不再伪造占位新闻**：无结果页上的零星外链曾被当作新闻并配上「XXX 相关新闻 1」的占位标题，破坏「查无此股 → 0 条」的不变量。现只收录同一链接内带真实标题、且通过标的相关性过滤的结果。
+
+### Changed
+
+- Tauri 2.11 → 2.12，opener / notification / shell / sql / store / process / updater 七个插件跨 minor 升级（npm 与 Rust 两侧同一提交）；@anthropic-ai/sdk 0.131、openai 7.28。
+- 修复构建期依赖 source-map-js 的高危公告 GHSA-68fv-2mgg-jv7q（仅经 postcss / tailwind 进入构建链路，不进入安装包）。
+
+## [0.17.0] - 2026-09-13
+
+### Added
+
+- **三位市场行为派大师开始读资金流**：主力资金流早已随量化数据拉取、前端也在展示，但 13 位大师一个都没读。现接给本就把「市场行为」当判断输入的三位——斯坦利·德鲁肯米勒（动能是否有真实资金支撑）、迈克尔·伯里（谁在抛售，是否构成错误定价）、凯西·伍德（市场是否开始为创新叙事定价）。其余 10 位价值派刻意不接：日频资金流在多期财报的框架里是噪声。这也让大师们的输入真正分化——此前 13 位共享同一份数据、分歧只来自 prompt 措辞，「10/13 看涨」这类共识会被严重高估。深度分析缓存同步跟上：选中这三位时主力方向一翻转即不再复用缓存，只选价值派时不受资金流波动影响。
+- **诊断日志真正落得了盘、送得到维护者手上**：设置 → 常规设置 → 诊断日志 →「打开目录」，报障时附上其中的 `sidecar.log`。此前打包后的应用没有终端承接 stderr，sidecar 里 86 处日志调用在生产环境全部丢弃，唯一落盘的内容 90% 是每 10 秒一次的报价轮询横幅。现在：
+  - `warn` 级也落盘——数据源回退、抓取策略失败只在这一级留痕，正是「K 线回退到不复权数据源」「新闻抓取全挂」这类故障事后唯一的线索
+  - 写入系统分配的应用日志目录。此前优先写可执行文件所在目录，装在系统目录时不可写，写成了也会被下次更新连同旧二进制一起抹掉
+  - 单文件 512 KB 轮转（此前无上限），报价轮询不再写横幅
+  - 落盘前统一脱敏 API key 与 URL 中的鉴权参数，日志可以放心贴进 issue
+
+### Fixed
+
+- **港股新闻的两个快速源此前实际不可用**：`0700.HK` 没有被识别成港股，Google News RSS 拿整串 `0700.HK 股票` 去搜，实测 0 条（`00700 股票` 有 56 条）；东财资讯召回的 8 条里只有 1 条属于该标的。于是港股新闻只剩三个要启动浏览器的 Google / Yahoo 策略，在它们被拦的网络下整条链落空。现识别 `0700.HK` / `hk00700` 两种写法并补零成 5 位标准代码。裸数字刻意**不认**作港股——4–5 位裸数字更可能是 A 股代码少打一位。
+- **设置页 5 行布局塌掉**：标题与描述挤在同一行、控件掉到下一行左侧、没有分隔线、末行按钮被裁掉一半。根因是承载这批样式的 `App.css` 自项目早期起就没有任何文件 import，这些规则在历史上从未生效过一次。现并入全局样式表；设置面板、分析栏、选股浮层的滚动条随之按原设计隐藏。
+- **英文 / 日文界面里残留中文**：顶部指数条的五个指数简称、公司详情里的「万」「亿」单位此前写死为中文，现随界面语言切换。
+
+### Performance
+
+- **sidecar 每次调用的启动开销降低**：一条看似无害的错误类 import 把整个新闻抓取子图（五个抓取策略、浏览器管理器、三个 AI SDK）拖进了启动路径，而 sidecar 每次调用都是新进程——包括每 10 秒一次、根本不抓新闻的报价轮询。启动期急加载 **38 → 15 个模块**，handler 模块图加载 **46 ms → 6.8 ms**。
+- 开发用的 443 行假数据此前无法 tree-shake、打进了每个生产包，现改为仅开发模式加载，前端包因此减少约 **7.6 kB**（该项单独实测 612.19 → 604.61 kB；本版其余依赖升级另有增量，与 v0.16.2 相比总体积并未变小）。
+
+### Changed
+
+- 自动更新插件升至 2.11，**从本版起检查与下载更新会遵循系统代理设置**。
+- 依赖升级：React 19.3、Tauri 插件（notification 2.4 / updater 2.11 等，npm 与 Rust 两侧同步）、`openai` 7.13、`@anthropic-ai/sdk` 0.124、`playwright-core` 1.63，以及 49 个 Rust 依赖的兼容版更新。
+
+## [0.16.2] - 2026-08-09
+
+### Fixed
+
+- **Google / Yahoo 不可达的地区，新闻抓取 100% 失败**：此前四条抓取策略全部解析到 `google.com` / `news.google.com` / `finance.yahoo.com`，这两个域名不通就一条新闻也抓不到——而失败会被报成「没有找到这只股票的相关新闻，请确认代码是否正确」，把网络不可达伪装成用户输错了代码。现补上**东方财富资讯**，它是唯一不依赖这两个域名的新闻源，且排在三条浏览器策略之前（那三条每条都要启浏览器并跑满导航超时，60 秒的抓取预算撑不到它）。
+- **一个不可达的域名就能吃光整份抓取预算**：Google News RSS 走的是裸 `fetch`，没有超时，被墙时一直挂到操作系统 TCP 超时为止，60 秒预算全耗在它身上，后面的备源一次都轮不到。**只加备源修不好这个 bug**——两处必须一起改。现统一经 `fetchWithPolicy` 注入超时。
+- 东财资讯是全文检索，搜 `600519` 会命中正文里出现过这串数字的无关文章。若不管，「查无此股 → 0 条新闻」这条不变量就没了，用户输错代码时反而会拿到一堆不相干的新闻。现按股票名与代码做相关性过滤，实测无效代码仍稳定返回 0 条。
+
+### Performance
+
+一次 A 股深度分析实测 **21.9 秒**，是全应用感知最强的等待（切换标的时自动触发），此前从未被测量过。三处已修：
+
+- **股票信息被取了两次**：搜索词增强自己拉一次公司名，紧接着又并发拉同一接口一次。A 股每次分析向 `hq.sinajs.cn` 发的请求 **2 → 1**，而该源实测抖动 0.26s–8.00s，多出的那次最坏白等 8 秒、还串在整条链最前面把新闻抓取一起顶后。
+- **新闻正文提取改并行**：3 条各约 4.3 秒、合计 12.85 秒，占整次抓取的 **59%**，而这三次几乎全是等网络。改为各用一个浏览器页面并行。A/B 对照证明**没有靠少抓内容换速度**：同样 3 个 URL，串行与并行提取出的正文长度逐条一致。
+- **不再为一个搜索词干等**：公司名只是把 `601012` 变成 `隆基绿能601012` 的搜索优化，却挡在新闻抓取前面。现最多等 3 秒，超时就用裸代码去搜（实测裸代码在东财与 Google RSS 上同样拿到 8/8 条相关新闻），慢查询与抓新闻**重叠**而非排队。
+
+合计：美股 **10.3 秒 → 6.0–6.2 秒**；A 股在信息源打满超时的最坏情况下 **21.9 秒 → 10.2 秒**。
+
+## [0.16.1] - 2026-08-09
+
+### Fixed
+
+- **Yahoo 不可达的地区终于能看美股**：此前美股 K 线与报价只有 Yahoo 一条路，Yahoo 被墙或抽风时整块空白；现 K 线补新浪兜底，报价改为腾讯 → 新浪 → Yahoo。报价顺序把国内可达的源排在前面还顺带修掉一个隐性卡顿——报价每 10 秒轮询一次，Yahoo 不可达时过去每一轮都要先吃满 8 秒超时。
+- **单个数据源整机故障不再让整片面板空白**：8 月 9 日东财 `push2*` 家族整体故障（连接重置 / 502）暴露出多条单点链路，现已逐条补上备源——A 股 K 线补到三源（腾讯 → 东财 → 新浪）、板块涨幅榜 / 资金流 / 全市场基本面快照各补新浪备源、美股基本面补东财备源。东财单点从 8 条收敛到 4 条（龙虎榜 / 公司 F10 / 财报历史 / A 股基本面确无可用的 JSON 备源，已在架构文档里记明）。
+- **备源缺字段一律显示「—」，不拿 0 顶替**：新浪的板块榜没有资金流与涨跌家数、资金流没有日期字段。填 0 会被读成「今天没有资金进出」，那是一句我们并不知道的断言。
+- **发版时 `Cargo.lock` 版本号漏改**：`bump-version` 此前只改三个文件，Cargo.lock 里的版本靠手工补刀，漏了就留下一棵半同步的树；现由脚本调 `cargo update --workspace --offline` 一并重锁。
+- **Linux 构建每月一炸**：CI 固定的 linuxdeploy 哈希对着上游的滚动 tag，上游一换构建就失配挂掉；现改从自建 release 资产取，哈希不再漂移。
+
+### Changed
+
+- 补齐 `runWithConcurrency` / `parseJsonFromAi` / `fetchWithPolicy` / LRI 缓存 / 多语言数字分档五处核心工具函数的测试覆盖（+41 条），并顺带修掉大数格式化对负数不分档的潜在缺陷。
+
+## [0.16.0] - 2026-08-09
+
+### Added
+
+- **我的持仓** — 记录真实持仓（份额 + 加权平均成本），实时市值、浮动盈亏、当日盈亏、仓位占比一目了然；加仓时按份额加权自动合并成本价。不同币种分开汇总（本应用没有汇率数据源，A 股与美股强行合并只会得到无意义的数字）；取不到报价的标的排除出汇总并显式点名，不用 0 顶替。
+- **大盘指数条** — 顶部常驻上证 / 深证 / 创业板 / 标普 500 / 纳斯达克 / 道琼斯行情。
+- **板块涨幅榜** — 点指数条展开行业与概念两张榜，含主力净流入、板块内涨跌家数与领涨股，点领涨股直接切过去分析。
+- **关注列表显示实时涨跌** — 现价与涨跌幅直接显示在列表里，按 A 股红涨 / 美股绿涨的习惯着色。
+- **龙虎榜** — 市场概览弹窗新增一页，展示最新交易日的净买入 / 净卖出前十，附上榜原因与成交额占比。同一只股票同日触发多个上榜标准时各条分别列出（不同统计窗口的净额本就不同，合并会得到一个交易所从未披露过的数字）。
+- **公司资料（F10）** — 个股页新闻下方新增折叠区：公司概况、最新报告期主营构成（按产品 / 行业 / 地区，含毛利率）、股东户数与十大流通股东、所属板块。仅 A 股，默认收起、展开才拉取。
+- **首启引导** — 从未保存过配置时不再直接甩一屏报错，改为指路「去设置里填 API Key」。
+
+### Fixed
+
+- **美股基本面全线取不到**：Yahoo 的 quoteSummary 接口加了 cookie + crumb 校验，未握手一律 401，市盈率、ROE 等字段整片为空；现补上握手流程。
+- **切换语言只有设置页跟着变**：`useSettings` 此前每个调用方各持一份状态，改语言只有当前组件重渲染，主界面仍是旧语言；现收敛为模块级单例，全应用一起切。
+- **副图指标切到 BOLL 时整页白屏**。
+- **分析卡住不返回**：三条路径各修一处——抓取策略链走空时无限期挂起、正文提取未纳入超时预算、以及卡死的 Chromium 让整个 IPC 调用永不返回（现改为写完结果即退出，Rust 侧加宽限回收）。
+- **搜索结果错位**：快速连续输入时后发请求可能被先到的旧响应覆盖；且请求失败时保留上一次的结果、看起来像「搜到了别的股票」。现加竞态守卫，失败明确上屏。
+- 回测**胜率虚高**：此前判定盈亏比较的是买卖两端价格、没算手续费，凡毛涨幅低于一买一卖两道费（默认约 0.2%）的单子实际是亏的，却被记成盈利单；现按扣费后真正落袋的金额判定。
+- 回测**净值曲线终点与总收益率对不上**：末尾强制平仓扣的手续费只进了现金、没回写曲线，图上的终点因此比报告的总收益率高出一笔费用。
+- **价格告警通宵轮询**：告警监控此前无视交易时段，A 股夜里两点照样每 10 秒请求一次；且逐只标的分别取价，5 条告警就是每 10 秒起 5 个 sidecar 进程。现改为仅交易时段、单次批量取价。
+- **北交所 920 号段被当成美股**：代码识别只认 6/0/3/4/8 开头，2024 年启用的 920 段落进了美股链路，K 线与报价一律取不到。实测东财北交所板块按代码序的前 5 只全是 920xxx，选股选中后点开必然空白。
+- **大师命中率口径被半份记录带偏**：13 位大师的 signal 此前逐条写库，中途失败会留下不完整的一批，统计命中率时按残缺样本算；现单语句批量写入。
+- **持仓连点加仓算错成本价**：读—改—写两步之间存在竞态窗口，连续两次加仓会各自基于同一份旧值计算、后写覆盖前写；现改为单条 SQL 原子合并。
+- 设置页连续保存时，「已保存」提示会被上一次的计时器提前打回。
+- 上证 e 互动问答的相对时间戳（「3 天前」）解析失败，日期缺失或被错记为提问时间。
+- 补齐 UI 文案的三语覆盖，并修复版本号读取失败时的静默。
+
+### Performance
+
+- **龙虎榜与板块榜重复打开不再重走网络**：两者都是「关掉弹窗再打开、来回切页签就重取」，龙虎榜尤其贵——探交易日必须先于两榜完成，是两轮串行 RTT、三发请求，实测同一命令三次 2.3s / 7.5s / 8.1s(超时失败)。加磁盘缓存后实测冷 3974ms → 热 82ms。TTL 按数据本身的变化频率定：龙虎榜 30 分钟（日频数据，但发布时刻不固定），板块榜 60 秒（盘中实时变动）。
+- **大师虚拟组合改批量取价**：此前按分析过的标的数逐只起 sidecar 进程，标的越多越慢。
+
+### Changed
+
+- **服务端错误统一映射为三语文案**：此前 Sidecar 与 Rust 层的中文技术错误直接上屏，英文/日文用户看到的是中文报错；现全链路带错误码，由前端按当前语言渲染。
+- 报价轮询收敛为全应用单例：关注列表、持仓、指数条共用一个定时器与一次批量请求，不再按消费方个数放大进程数。
+- 新增 `--quotes` 批量报价、`--sectors` 板块榜、`--billboard` 龙虎榜、`--company` 公司资料四个 Sidecar 动作。
+- Dashboard 的弹窗编排抽出主布局，全屏浮层的互斥由类型保证（此前四个独立布尔量可表达出「两层遮罩叠着」的无效态）。
+- 依赖全量升级：lightweight-charts v5、Vite 8、TypeScript 7。
+
+## [0.15.1] - 2026-07-12
+
+### Added
+
+- **自然语言选股** — 用大白话描述筛选条件（例如"ROE 大于 15 且市盈率小于 20 的沪深主板股票"），AI 自动解析为结构化规则并跑在全市场基本面快照上；搜索栏新增入口，弹窗展示命中列表。
+- **投资者互动问答接入对话** — 追问时自动检索沪市「上证e互动」/ 深市「深交所互动易」官方公开的投资者问答作为参考，回答附带可点击溯源角标，标明原文出处与日期。
+- **AI 回答 inline 溯源徽章** — 新闻、财务数据、投资者问答等来源均可点击查看出处；来源校验失败时静默降级，绝不展示不可靠来源。
+- **K 线图叠加 AI 关键价位** — 支撑位/阻力位/目标价/止损价直接画在主图上；回测面板同步叠加买卖点标记与净值曲线，AI 结论不再局限于文字描述。
+- **大师专属因子预计算** — 价值派大师（巴菲特、芒格、格雷厄姆等）在提交给 LLM 前，先由代码算好护城河、估值等量化因子，判断更收敛、更少大师自行拍脑袋套阈值。
+- **大师历史命中率动态加权** — 综合研判会依据每位大师的历史信号命中率动态调整权重（贝叶斯收缩防止小样本失真），命中率越高的大师声音越大。
+- **历史财务时序 + 全市场基本面快照** — 新增按报告期获取多期财务数据、以及全市场快照的能力，为选股 / 问答检索 / 因子预计算提供数据基座。
+
+### Fixed
+
+- ROE 取值此前直接使用东方财富报告期累计值当年度阈值比较，非年报期系统性偏低，导致"ROE > 15%"类查询大概率漏判正常达标的公司；现按季报/半年报/三季报正确折算为年化值。
+- 深交所互动易问答日期此前按 UTC 渲染，北京时间凌晨 0-8 点窗口的问答会被误判为前一天。
+
+### Changed
+
+- 投资者关系资料的数据源由巨潮资讯网 PDF 公告改为交易所官方互动问答平台，覆盖面与内容真实性均大幅提升。
+
+## [0.14.1] - 2026-06-27
+
+### Added
+
+- **GLM 模型列表改为实时拉取** — 配好智谱（GLM）API Key 后，模型下拉会实时从智谱 `/api/paas/v4/models` 接口拉取你账号下真正可用的模型（此前 GLM 是构建期写死的静态列表，与 OpenAI / DeepSeek 不一致）；接口为空或请求失败时仍回退精选目录兜底，并始终支持手动输入任意模型名。
+
+### Changed
+
+- 工程化改进（不影响使用）：提交前 simplify→review 由自觉流程改为机制门禁、引入 biome 统一格式化与 format-on-edit / pre-push 格式校验、API Key 硬编码守卫钩子。
+
+## [0.14.0] - 2026-06-14
+
+### Added
+
+- **按角色分级模型** — 现在可为不同任务分别指定 AI 模型：核心研判（基础分析 + 13 位大师 + 综合结论）、新闻情绪标注、对话追问三类任务各配一个「服务商 + 模型」，把聪明（贵）模型留给关键研判、把便宜模型用于批量轻活，按需平衡质量与成本。默认全部跟随当前服务商，开箱即与旧版行为一致；想分级时在「模型服务」设置里的角色矩阵按需调整。
+- **动态拉取真实模型列表** — 配好 API Key 后，OpenAI / Anthropic / DeepSeek 的模型下拉会实时从服务商接口拉取你账号下真正可用的模型（此前仅 Ollama 支持，其余是硬编码列表）；GLM 等无公开列表接口的服务商用精选目录兜底，并始终支持手动输入任意模型名。
+- **带标签的模型目录** — 模型下拉为常用模型标注「旗舰 / 高速 / 长文本 / 推理 / 均衡」等中英日标签，挑模型时一眼看清定位。
+
+### Changed
+
+- **多服务商 Key 共存更清晰** — 各服务商的 API Key 始终独立保存，切换或分级时无需重输；设置页新增按角色分配模型的矩阵，凭证集中在「模型服务」一处管理。
+
+### Security
+
+- **列模型不再把 API Key 写进进程参数** — 拉取模型列表时 Key 改经 0o600 权限临时文件传递（与分析 / 对话路径一致），不再出现在进程命令行参数中，避免被同机其他进程窥见。
+
+## [0.13.0] - 2026-06-06
+
+### Added
+
+- **波动率 → 建议仓位上限（独立风控层）** — 新增基于个股波动率的仓位指引：用「波动率目标法」给出建议仓位区间（基准 20%，区间 5–25%），波动越大建议仓位越低，作为非投资建议的风控参考，帮你把「该不该重仓」量化出来。
+- **复合评分四维化** — 量化综合分从「技术 + 基本面」扩展为「技术 / 基本面 / 估值 / 波动率」四维：估值正式计入总分，风险（波动率）向中性收敛拉分，并给出各维度的权重拆解，一眼看清分数构成。
+- **基本面评分可逐项下钻** — 基本面卡片现在可展开查看每一条检查项（指标、阈值、比较方式、是否通过），不再是一个孤零零的分数，能看清「为什么是这个分」。
+- **大师多空分布可视化** — 深度分析新增看多 / 看空 / 中性占比条，13 位大师的阵营分布一眼可见，不必逐张卡片数。
+- **波动率翻译成半年涨跌区间** — 把抽象的波动率数字换算成「未来半年 95% 置信区间下的涨跌幅范围」，比一个百分比更直观地传达风险。
+- **A 股个股资金流向卡** — 新增东方财富资金流向卡片，展示主力 / 超大单 / 大单 / 中单 / 小单的净流入（仅 A 股）。
+
+### Changed
+
+- **深度分析磁盘结果缓存** — 13 位大师的深度分析结果现在落盘缓存（10 分钟 TTL，按 symbol + 语言 + 大师组合 + provider/model 指纹 + 量化/新闻信号做 key），同配置重复查看同一股票不再重复跑整条 15 次 LLM 调用的链路，显著更快更省 token；换模型 / Key / 大师组合会自动失效重算。
+- **所有外部数据源请求加超时** — K 线 / 搜索 / 股票信息 / 基本面等全部 fetch 统一加 8 秒超时，弱网或数据源无响应时不再无限挂起，能更快失败并回退到下一数据源。
+- **内部代码质量与测试覆盖提升** — 量化阈值与模型参数集中为具名常量、信号配色与卡片骨架去重、超长组件抽离为 hook、补齐指标计算的边界与异常输入测试（对用户无感，但让后续迭代更稳）。
+
+## [0.12.1] - 2026-05-31
+
+### Fixed
+
+- **深度大师分析现在能看到完整理由** — 此前每位大师的分析理由被永久截断为 2 行且无法展开，看不到完整论证；现改为点击卡片即可展开/收起完整文本（chevron 指示），并修正了展开时同行卡片被拉成等高的留白问题。
+
+## [0.12.0] - 2026-05-31
+
+### Added
+
+- **对话式追问** — 分析出结果后，可基于已抓取的新闻与大师观点继续多轮追问，无需重新抓取，复用已有上下文，回答更快也更省 token。
+- **虚拟大师组合（展示层）** — 新增「大师命中率榜 + 净值曲线」面板：系统从本版本起记录每位大师的方向性判断（看多/看空），按方向调整收益统一口径，前向跟踪真实行情后逐日累积命中率与净值曲线，帮你看清哪位大师在当前市场更靠谱。展开面板时才懒加载实时报价，不影响主分析速度。
+
+### Changed
+
+- **深度分析提速 & 省 token** — 13 位大师链路改为按 provider 并发调度，并让缓存按「配置指纹」失效（换模型 / Key 自动重算、同配置命中缓存），深度分析更快、重复分析更省。
+
+### Fixed
+
+- **大师分析现在能读到新闻正文** — 此前深度模式抓取的正文只喂给了情绪汇总，大师 prompt 仍只拿到标题；现已将正文注入大师 prompt，判断依据更充分。
+
+## [0.11.1] - 2026-05-30
+
+### Added
+
+- **Linux 应用内自动更新（AppImage）** — Linux 现新增发布 `.AppImage` 产物并接入自动更新，Linux 用户也能像 macOS / Windows 一样在软件内一键升级（`.deb` 仍保留给习惯 apt 管理的用户手动安装）。至此三平台自动更新全部就位。
+
+### Fixed
+
+- **修复 Linux AppImage 打包失败** — Tauri 内置的旧版 linuxdeploy 在处理 sidecar 二进制时崩溃，导致 v0.11.0 无法生成 `.AppImage`。改为在构建前预置较新版 linuxdeploy（并校验 SHA256）修复。
+
+## [0.11.0] - 2026-05-30
+
+### Added
+
+- **应用内自动更新（macOS / Windows）** — 软件启动时静默检查 GitHub 上的新版本，发现后顶部提示，一键即可下载、安装并自动重启，不必再手动下载安装包。设置 →「常规」新增「检查更新」按钮可随时手动检查。更新包经 minisign 签名校验，防止被篡改。
+
+### Notes
+
+- 自动更新自本版本（v0.11.0）起生效：现有 v0.10.0 用户需手动安装一次本版本，之后即可在应用内一键升级。
+- Linux 本版本仍为 `.deb` 手动安装；Linux 的应用内自动更新（AppImage）将在后续版本提供。
+
+## [0.10.0] - 2026-05-27
+
+### Added
+
+- **多语言支持（zh / en / ja）** — UI 全面国际化，覆盖所有组件、设置弹窗、搜索栏、分析面板、量化评分卡、情感分析、历史记录等；Settings 新增语言选择器。AI Agent 分析响应（提示词、结构标签、错误消息）同步支持三语言，由语言参数贯穿整个 Agent 调用链。
+- **自选股价格提醒** — 监听持仓涨跌，达到用户设定阈值时发出系统通知。
+- **批量量化筛选器** — 对自选股列表执行量化评分扫描，一键获取全部标的的技术/基本面/估值/波动率综合评分。
+- **分析历史持久化** — 基于 SQLite 的分析历史存储，支持回溯查看历次 AI 分析结果。
+
+### Fixed
+
+- **SentimentBreakdown 中性条宽度** — 中性占比改用直接比率计算，修复宽度渲染错误。
+- **HistoryTimeline 日期格式** — `toLocaleDateString` 现在根据当前语言选择正确的地区格式。
+- **AI Prompt 结构标签硬编码** — synthesizer 的 `buildSynthesisPrompt` 和 sentiment 的 `buildPrompt` 中的结构标签（`[各大师研判]`、`信号:`、`返回格式:` 等）改为多语言字典，不再混入中文。
+- **测试硬编码字符串** — factory / synthesizer 测试中的错误消息断言改为引用生产代码导出的常量，防止断言与实现脱节。
+
+## [0.9.0] - 2026-05-24
+
+### Added
+
+- **多 Agent 大师投资分析** — 13 位顶级投资大师 AI Agent（Buffett、Graham、Munger、Burry、Wood、Lynch、Fisher、Ackman、Soros、Dalio、Simons、Druckenmiller、Taleb），各自以独立投资哲学对股票给出多空信号与置信度，综合合成最终投资建议。
+  - **情感分析 Agent** — 基于 LLM 的新闻情感分类，为大师 Agent 提供市场情绪输入。
+  - **信号综合器** — 按大师权重加权聚合多空信号，支持置信度加权、tie-breaking 与分数钳制。
+  - **ChatProvider 适配器** — 统一所有大师 Agent 的 LLM 调用接口，支持 OpenAI / DeepSeek / GLM / Anthropic / Ollama 全部已有 Provider。
+  - **深度分析 UI** — 独立的"深度分析"按钮与结果面板，展示每位大师的分析理由、信号与置信度。
+- **DCF / Owner Earnings 估值模型** — 新增内在价值估算，包含折现现金流（DCF）、所有者盈余（Owner Earnings）和相对估值（PE/PB/PS/EV 百分位），为 Buffett / Graham / Damodaran Agent 提供估值数据。
+  - **ValuationCard 组件** — 展示内在价值、安全边际百分比和估值评级。
+- **风险指标引擎** — 计算年化波动率、波动率百分位、最大回撤、Sharpe 比率代理和风险等级，为 Taleb / Druckenmiller Agent 提供风险量化输入。
+  - **RiskCard 组件** — 展示风险等级、波动率、回撤和 Sharpe 比率。
+- **量化回测引擎** — 基于技术信号的策略回测，生成权益曲线、交易记录、胜率和 Sharpe 比率。
+  - **BacktestPanel 组件** — 可视化权益曲线图表和回测统计指标。
+
+### Fixed
+
+- **技术指标详情丢失（Critical）** — `analyzeTechnical` 的 composite details 只包含信号摘要字符串，未合并子信号的实际指标值（RSI、MACD、ADX、volume_ratio），导致 13 个大师 Agent 的 prompt 中这些字段为 undefined。
+- **@filepath 路径遍历漏洞** — Sidecar 的 `@filepath` 配置协议未校验路径，攻击者可读取任意文件。现在验证路径必须位于 `tmpdir()` 且以 `solanna-` 为前缀。
+- **API Key 泄露风险** — sidecar-bridge 将完整 config JSON 作为命令行参数传递，`ps aux` 可见 API Key。改为写入 0o600 权限的临时文件。
+- **useQuantData 潜在无限循环** — `fetcher` 函数包含在 useEffect 依赖数组中，每次渲染创建新引用触发重新执行。改用 `useRef` 打破依赖循环。
+- **NaN/Infinity 显示** — RiskCard、ValuationCard、BacktestPanel 对无效数值添加 NaN 守卫，防止显示 NaN%。
+- **回测引擎最终平仓** — 引擎现在在回测结束时记录强制平仓交易，之前会丢失最后一笔持仓。
+- **综合信号 tie-breaking** — 当多空权重相等时，synthesizer 现在默认返回 neutral 而非随机偏向。
+- **默认情感分析回退** — 移除 AnalysisPanel 中的硬编码默认 sentiment 值，无数据时不再误导用户。
+
+### Changed
+
+- **LLM 并发限制** — 深度分析的 13+ 个并行 LLM 调用改为 MAX_CONCURRENCY=4 的受控并发，防止 API 429 限流。
+- **波动率百分位算法** — 从 O(n log n) 排序 + findIndex 改为 O(n) 线性扫描。
+- **共享常量提取** — `RISK_FREE_RATE`（4.5%）和 `TRADING_DAYS_PER_YEAR`（252）提取到 `shared/constants.ts`，消除三处重复定义。
+- **类型去重** — 删除 `ValuationResult`、`RiskMetrics`、`DeepAnalysisResponse` 三个与 `shared/types.ts` 重复的接口。
+- **cache-utils 提取** — `MAX_SYMBOLS_IN_CACHE` 和 `setWithLRI` 从 `useAIAnalysis` 提取为独立模块，`useDeepAnalysis` 共享使用。
+- **信号样式集中化** — 创建 `signal-styles.ts` 工具模块，消除 MasterCard / SynthesisSummary / AnalysisPanel 中的重复样式逻辑。
+- **大师 Agent 工厂模式** — `createMasterAgent` 工厂函数消除 13 个 Agent 文件的样板代码。
+- **.gitignore 加固** — 添加 `.env` 和 `.env.*` 规则，防止敏感文件意外提交。
+
+### Tests
+
+- 测试总数升至 **288**（前端 88 + sidecar 200）。
+- 新增：深度分析编排器测试、信号样式测试、大师工厂测试、ChatProvider 适配器测试、Warren Buffett Agent 测试。
+
+## [0.8.0] - 2026-05-24
+
+### Added
+
+- **量化分析系统（Phase 1）** — 在 AI 分析基础上叠加量化评分，让报告更具专业性与可解释性。
+  - **技术面评分**：EMA 趋势 / RSI 动量 / MACD 信号 / 布林带位置 / ADX 趋势强度，五维加权合成 0–10 分。
+  - **基本面评分**：对接东方财富 / Yahoo Finance，盈利能力 / 增长率 / 财务健康 / 估值四维评分，A 股与美股均支持。
+  - **QuantScoreCard 组件** — 可展开的信号详情卡，直观呈现每个指标的信号方向与权重贡献。
+  - **并行数据获取** — `useQuantData` hook 与新闻爬取并行执行，不阻塞主流程。
+  - **增强 Prompt** — 量化摘要自动注入 LLM 上下文，AI 报告新增 `technicalView` / `fundamentalView` 两个专业视角。
+- **`--quant` Sidecar CLI 动作** — 独立拉取量化包（`QuantBundle`），可在 bridge 模式下单独调用。
+- **Rust `fetch_quant_bundle` 命令** — Tauri 层新增对应指令，与 `start_analysis` 并行触发。
+
+### Changed
+
+- **类型安全全面收紧** — 消除全部 `any` 类型，替换为精确接口定义，TypeScript 严格模式零报错。
+- **CLI 命令表驱动** — Sidecar `index.ts` 改为表驱动分发，新增 action 只需追加一行，无需修改 if-else 链。
+- **策略重试健壮性** — 爬取策略失败时自动重试，减少因网络抖动导致的分析失败。
+- **组件拆分** — `AnalysisTriggerCard` 从 `AnalysisPanel` 提取为独立组件，单文件行数均低于 200 行上限。
+- **移动端适配** — 仪表盘主容器支持小屏垂直堆叠，滚动行为统一（移动端整页滚动，桌面端各区独立滚动）。
+
+### Tests
+
+- 测试总数升至 **296**（前端 88 + sidecar 208）。
+- 新增量化模块单元测试：`technical.test.ts` / `fundamental.test.ts` / `scoring.test.ts`，覆盖纯函数指标计算。
+- 补齐 scraper / prompts / watchlist hook / `AnalysisTriggerCard` 共 47 个测试用例。
+
+## [0.7.0] - 2026-05-23
+
+### Added
+
+- **两阶段分析架构** — AI 分析改为显式触发，切换股票不再自动消耗 token；分析按钮明确区分"获取数据"与"开始分析"两步，用户完全掌控何时调用 AI。
+- **list-models 错误分类** — Sidecar 对模型列表拉取失败细分 6 种错误码（网络超时、认证失败、端点不存在等），Provider 设置页面展示可操作的具体提示，而非笼统报错。
+- **bump-version 脚本** — `bun run bump-version <x.y.z> --write` 一键同步三个版本文件（`package.json` / `tauri.conf.json` / `Cargo.toml`），内置 dry-run 预览。
+- **聚合测试 runner** — `bun run test` 统一串联前端 vitest 与 sidecar bun test，带超时保护，无需 GNU `timeout` 依赖；`bun run test:integration` 追加网络集成测试。
+- **PriceChart 端到端测试** — 覆盖 K 线协调层 6 个核心场景（数据加载、实时合并、错误回退等）。
+
+### Fixed
+
+- **ARG_MAX 溢出风险** — 当新闻条目过多时，`analyze_news` 命令行参数超过系统限制导致 sidecar 崩溃；改为通过临时文件传递新闻 JSON，彻底消除风险。
+- **跨 symbol 状态泄漏** — 切换股票时，前一只股票的分析结果可能短暂显示在新股票页面；加入请求 ID 校验，过期响应直接丢弃。
+
+### Changed
+
+- **RAII 临时文件清理** — 引入 `TempFileGuard`，分析流程结束后自动删除临时文件，无需手动清理。
+- **LRU cache 上限** — `useAIAnalysis` hook 的缓存条目上限设为 50，防止长时间使用后内存持续增长。
+- **渲染节流** — K 线更新合并高频渲染帧，减少不必要的 DOM 操作。
+- **K 线 symbol 解析共享化** — 提取 `sidecar/parsers/exchange.ts` 共享工具，eastmoney / tencent / yahoo 三个数据源统一解析逻辑。
+- **stdout 信封统一** — Sidecar 所有 CLI 动作输出格式标准化（`{ ok, data } | { ok, error }`），前端解析路径收敛。
+- **三栏仪表盘布局** — 主界面重构为左（自选列表）+ 中（K 线图）+ 右（AI 分析）三栏，信息密度大幅提升。
+
+## [0.6.0] - 2026-05-22
+
+### Added
+
+- **专业级 K 线图子系统** — 替换原 TradingView iframe Widget，基于 lightweight-charts v4 全新构建：主图 K 线 + 成交量副图 + MA 均线（短/中/长可切换）+ BOLL 布林带 + 昨收/现价水平线 + 比较基准叠加（归一化另一标的相对走势）。
+- **多副图技术指标** — MACD / RSI / KDJ / OBV / VWAP 一键切换。
+- **十字光标信息浮层** — 鼠标悬浮显示当根 K 线 OHLCV 详情。
+- **实时报价合并** — `useRealtimeQuote` 仅在交易时段轮询，与 K 线最后一根自动合并；最后一根 K 上标注"现"marker，一眼定位当前 K 线。
+- **多源 K 线数据** — 新增 Yahoo Finance / 东方财富 / 腾讯三个数据源，按顺序容错回退，覆盖美股与 A 股（含复权）。
+- **技术指标库** — `src/lib/indicators.ts` 提供 SMA / EMA / MACD / RSI / KDJ / BOLL / OBV / VWAP 纯函数实现，含完整单测。
+- **新 IPC 命令** — `fetch_kline` / `fetch_realtime_quote`，Sidecar CLI 同步新增 `--kline` / `--quote` 动作。
+- **开发桥接器扩展** — `scripts/sidecar-bridge.ts` 支持新增的 K 线 / 报价指令，浏览器 dev 模式可直拉真实数据；bridge 未启动时一次性 warn 后回退 mock，避免轮询刷屏。
+- **市场识别工具** — `src/lib/market-hours.ts` 提供市场识别 / 涨跌色（美股绿涨红跌，A 股相反）/ 交易时段判断。
+
+### Changed
+
+- **CLAUDE.md 架构文档** — 补全 Sidecar CLI actions 表与 PriceChart 子系统说明，修正过时的开发桥接器路径。
+
+## [0.5.12] - 2026-05-21
+
+### Fixed
+
+- **K 线图不显示** — 修复 CSP 缺少 `frame-src` 导致 TradingView K 线 Widget 被浏览器拦截的问题。
+
+## [0.5.11] - 2026-05-21
+
+### Fixed
+
+- **分析服务异常 (ExitCode: Some(1))** — 修复 Bun `--compile` 二进制中 `playwright-core` 因 CJS `__dirname` 烘焙为 CI 机器绝对路径而导致 sidecar 启动即崩溃的问题。根因：静态 `import "playwright-core"` 使模块在 sidecar 启动时立即求值，找不到 CI 路径下的 `package.json`，所有操作（包括不需要浏览器的"获取模型列表"）均报错。修复方式：将 playwright-core 改为在真正需要浏览器时才动态加载，RSS 抓取路径和模型列表等功能不受影响，Playwright 策略在加载失败时优雅降级（跳过）。
+
+## [0.5.10] - 2026-05-21
+
+### Fixed
+
+- **Sidecar 启动失败** — 修复 Tauri v2 sidecar 路径解析错误，导致分析功能和模型列表均报"No such file or directory (os error 2)"。根因：`tauri-build` 复制 sidecar 时剥掉了 `bin/` 路径前缀，但运行时调用仍带前缀，查找路径不存在。现已对齐两侧路径。
+
+## [0.5.9] - 2026-05-21
+
+### Changed
+
+- **Release workflow documented** — Added comprehensive release checklist to CLAUDE.md, covering version sync, CHANGELOG formatting, CI gate (all checks must pass before tagging), GitHub Release notes, About section, and Labels.
+- **GLM provider documented** — CLAUDE.md now documents the GLM provider and the OpenAI-compatibility pattern for adding new providers.
+
+## [0.5.8] - 2026-05-19
+
+### Added
+
+- **Zhipu AI GLM support** — GLM-5.1 is now available as an AI provider. Uses the OpenAI-compatible endpoint (`open.bigmodel.cn/api/paas/v4`); configure your API key in Settings → Model Service → GLM. Other GLM variants (`glm-4.7`, `glm-4.6v`) can be set manually in the model name field.
+
+## [0.5.7] - 2026-05-19
+
+### Fixed
+
+- **Stock search & info broken** — The sidecar argument parser was reading `config_json` as the symbol/keyword for `--info` and `--search` commands (off-by-one: `args[idx+1]` instead of `args[idx+2]`). Stock search results and the stock info panel now work correctly.
+- **DeepSeek API endpoint updated** — Default base URL changed from `https://api.deepseek.com/v1` to `https://api.deepseek.com` per the current official documentation. Default model updated from `deepseek-chat` (scheduled for deprecation 2026-07-24) to `deepseek-v4-pro`.
+
+## [0.5.6] - 2026-05-18
+
+### Fixed
+
+- **macOS 签名与公证 (Critical)** — 彻底解决了 macOS 用户下载 DMG 后提示"应用已损坏"的问题。引入了完整的 CI 签名链路（Apple 证书导入 → ad-hoc 签名 → notarization），并在构建后对 Sidecar 二进制进行主动签名。同时新增了二进制完整性校验脚本，防止构建路径泄漏。
+- **HTTP 错误响应处理** — 搜索接口在收到 4xx/5xx 响应时不再继续解析无效数据，直接返回空结果。
+- **Playwright 浏览器资源泄漏** — 浏览器上下文（BrowserContext）现在在错误恢复路径中也能被正确关闭，彻底修复了上下文泄漏问题。
+- **JSON 输出协议健壮性** — `outputJson` 改为先完成序列化（捕获异常后输出合法的 error JSON），再标记写入状态，确保 Tauri 端始终能解析到有效响应。
+- **无限递归风险消除** — 港股等不支持类型触发搜索回退时，不再重入 `fetchStockInfo`，改为直接分发到具体实现函数，彻底消除栈溢出风险。
+- **类型安全加固** — CLI handler 的 config 参数从 `any` 改为强类型 `ResolvedConfig`，消除 IPC 边界类型擦除。
+
+### Changed
+
+- **构建脚本优化** — 禁用 Bun 自动签名，改由 CI 统一管理，避免签名冲突。
+- **属性清理** — 在 macOS 签名前自动清理扩展属性（`xattr -cr`），防止 Gatekeeper 拒绝已下载的文件。
+
+## [0.5.5] - 2026-04-23
+
+### Fixed
+
+- **Playwright 路径泄露根除方案 (Environment Agnostic Fix)** — 彻底解决了 `ResolveMessage: Cannot find module` 报错。
+    - **发现**：Bun 的编译器在 `--compile` 时会将当前构建环境的物理路径注入为 `__dirname`。
+    - **修复**：在构建脚本中，将 Bundle 内所有的 `__dirname` 强制替换为 `import.meta.dir`。在编译后的二进制中，后者能正确指向 Bun 的虚拟文件系统 (`/$bunfs/root`)，从而实现了真正的环境无关。
+- **构建完整性校验** — 引入了严苛的二进制自检环节，若发现任何残留的构建机器路径，CI 将自动熔断。
+
+## [0.5.3] - 2026-04-23
+
+### Fixed
+
+- **Playwright 路径泄露终极解决方案 (Ultimate Patch)** — 采用了“静态劫持 + 动态注入”的双重防护策略。通过 esbuild 的 `--define` 强制劫持了所有 `require.resolve` 调用，并注入了安全的路径解析占位符。这彻底切断了 Bun 编译器将构建机器绝对路径嵌入二进制文件的所有可能路径。
+- **Rust 核心层鲁棒性增强** — 重写了 Sidecar 输出解析逻辑。现在 Rust 会通过反向扫描寻找最后一个合法的 JSON 对象，并使用 `serde_json` 严格序列化错误消息，彻底解决了因控制台杂讯或非 JSON 输出导致的 UI 解析失败（“非 JSON 格式错误”）。
+
+## [0.5.2] - 2026-04-23
+
+### Fixed
+
+- **Playwright 路径泄露终极解决方案 (Ultra-Robust Fix)** — 彻底解决了 `Cannot find module package.json` 错误。通过在打包前对 `node_modules` 中的 `playwright-core` 源码进行“手术级预处理”，强行中和了所有引起 Bun 编译器静态分析异常的 `require.resolve` 调用。
+- **构建链路优化** — 引入了“预修补 -> Esbuild 打包 -> Bundle 洗护 -> Bun 编译”的全全链条自动化脚本，确保生成的二进制文件在任何机器上均能稳定运行。
+
+## [0.5.1] - 2026-04-23
+
+### Fixed
+
+- **Playwright 路径泄露终极解决方案 (Ultimate Fix)** — 切换到 `esbuild` + `bun` 混合构建模式。通过在打包阶段重命名全局 `require.resolve` 为安全占位符，彻底绕过了 Bun 编译器对绝对路径的强制解析。这确保了 Playwright 内部的路径查找逻辑在任何机器上都能平稳降级，不再触发 `Cannot find module package.json` 错误。
+
+## [0.5.0] - 2026-04-23
+
+### Fixed
+
+- **Playwright 路径泄露终极解决方案 (Nuclear Fix)** — 彻底重构了 Sidecar 构建流程。引入了“双阶段修补+编译前自检”机制。通过暴力字符串替换和代码截断，从二进制层面抹除了所有构建机器的绝对路径（如 `/Users/runner/...`），并将 Playwright 内部的目录查找逻辑强行重定向。
+- **构建安全自检** — 在 CI 流程中增加了二进制完整性校验，如果检测到任何残留的构建路径泄漏，构建将自动失败并报警，确保用户拿到的永远是“纯净”的、环境无关的程序。
+
+## [0.4.9] - 2026-04-23
+
+### Fixed
+
+- **Playwright 路径硬编码终极修复 (Critical)** — 针对 Bun 编译器在处理 `require.resolve` 时的过度优化进行了深度修补。在构建阶段，通过自动化脚本暴力截断了 Playwright 内部用于定位自身目录的反射逻辑，将其强制重定向为环境无关的相对路径。这彻底消除了在用户机器上运行分析时因找不到构建机器路径而导致的崩溃。
+- **构建脚本鲁棒性增强** — 优化了 `build-script.ts` 的正则匹配逻辑，确保能够捕获并中和所有被 Bun 转换后的 `__require.resolve` 绝对路径。
+
+## [0.4.8] - 2026-04-23
+
+### Fixed
+
+- **构建期路径泄露彻底修复 (Hotfix)** — 引入了双阶段构建流程（Bundle -> Patch -> Compile）。解决了 Bun 在 GitHub Action 环境下编译二进制时，会将构建机器的绝对路径（如 `/Users/runner/work/...`）硬编码到 Playwright 依赖中的问题。现在 Sidecar 二进制文件实现了真正的环境无关，彻底解决了在分析时提示“Cannot find module package.json”的错误。
+- **构建脚本自动化** — 新增了 `sidecar/build-script.ts`，统一了本地和 CI 环境下的 Sidecar 构建逻辑，确保发布版本的稳定性。
+
+## [0.4.7] - 2026-04-23
+
+### Fixed
+
+- **依赖链深度解耦 (Critical)** — 对 `cli-handlers.ts` 进行了重构，将所有业务 Handler 的导入（如分析引擎、抓取器）全部改为函数内部的动态 `import()`。这确保了在执行“获取模型列表”等轻量任务时，完全不会触发对 Playwright 或分析引擎的加载，从而彻底避免了因浏览器环境缺失导致的启动错误。
+- **构建路径硬编码修复** — 解决了 Bun 编译过程中因静态分析导致的构建环境路径（GitHub Runner 路径）泄露到二进制文件的问题。
+
+## [0.4.6] - 2026-04-23
+
+### Fixed
+
+- **Sidecar 启动稳健性 (Crucial)** — 引入了动态加载架构。错误拦截器现在作为程序运行的“绝对第一行”执行，所有重型业务逻辑（如 SDK 导入）均通过 `await import()` 延迟加载。这解决了因 top-level import 失败导致拦截器失效、进而产生“空 stderr”和“静默崩溃”的问题。
+- **参数匹配算法增强** — 重新设计了 `process.argv` 过滤算法，能够自动识别并跳过 Bun 运行时路径、二进制包内路径等干扰项，确保在 Sidecar 模式下 Action 和 Config 的定位 100% 准确。
+- **Stderr 全量透传** — Rust 侧现在会完整捕获并反馈 Sidecar 的 Stderr 信息，彻底终结了“分析服务无响应”这种含糊的错误提示。
+
+## [0.4.5] - 2026-04-23
+
+### Fixed
+
+- **Sidecar 核心协议稳定性 (Critical)** — 改用 `fs.writeSync` 取代 `process.stdout.write`，确保 JSON 结果在进程退出前能够同步、不经过缓冲区地强制写入 stdout。解决了在部分环境下（如 Tauri 管道）因进程退出过快导致输出丢失的问题。
+- **Stderr 穿透调试** — 改进了 Rust 核心层对 Sidecar 错误流的处理，现在如果 Sidecar 崩溃，前端能直接看到具体的 Stderr 错误详情（包括堆栈信息），极大提升了排障效率。
+- **参数解析加固** — 优化了 Sidecar 的 `process.argv` 解析逻辑，兼容了不同环境（源码运行、Bun 编译二进制、Tauri Sidecar）下索引位置可能存在的偏差。
+
+## [0.4.4] - 2026-04-23
+
+### Fixed
+
+- **Sidecar 稳定性增强** — 增加了全局未捕获异常处理，确保后台服务崩溃时能以 JSON 格式输出错误信息，避免前端显示“分析服务无响应”。
+- **Ollama 适配优化** — 将 Ollama SDK 改为动态导入，并为模型列表获取和 AI 分析增加了更严格的超时保护（10s - 120s），解决了服务未响应时应用卡死的问题。
+- **AI 结果解析容错** — 引入了更强大的 JSON 提取逻辑，能够自动过滤 AI 回复中可能夹带的 Markdown 代码块标签（\`\`\`json）或多余文本，大幅提升了分析结果的解析成功率。
+- **配置校验加固** — 在 Rust 核心层增加了配置项非空校验，并在后台增加了配置版本匹配检查，防止因配置迁移不彻底导致的启动分析报错。
+
+## [0.4.3] - 2026-04-23
+
+### Fixed
+
+- **App 启动崩溃 (tauri-plugin-shell v2.3.5 兼容性)** — `tauri-plugin-shell` v2.3.5 移除了 `plugins.shell.sidecar` 配置字段，导致 App 启动时 panic（`unknown field 'sidecar', expected 'open'`）。将 sidecar 允许列表迁移到 `capabilities/default.json` 的 scoped permission，并显式声明 `args: true` 以匹配原有的可变参数语义。
+
+## [0.4.2] - 2026-04-23
+
+### Fixed
+
+- **Test runner collision (测试运行器冲突)** — Vitest config no longer includes `sidecar/**/*.test.ts`, preventing import resolution failures when vitest tried to process bun:test-flavored sidecar test files. Sidecar tests are now exclusively run by `bun test`.
+- **`--info` Chinese-name lookup regression (`--info` 中文名称查询回归)** — A guard that returned `ERR_INVALID_SYMBOL` when `parseSymbol` couldn't resolve a code was blocking `fetchStockInfo`'s smart-search fallback. Chinese company name queries (e.g. "安克创新") would always return `ERR_INVALID_SYMBOL` instead of performing a name search.
+- **BrowserManager retry after launch failure (浏览器启动失败后可重试)** — `pagePromise` is now cleared in the rejection handler, so subsequent `getPage()` calls can retry the launch instead of returning the same rejected promise indefinitely.
+- **Ollama empty-host fallback (Ollama 空地址回退)** — `handleListModels` now passes `undefined` instead of `''` to the Ollama SDK when no host is configured. An empty string caused malformed URL construction; `undefined` correctly triggers the SDK's built-in `localhost:11434` default.
+- **Provider registry non-null assertions (Provider 注册表非空断言)** — Replaced `!` assertions on `cfg.model` and `cfg.baseUrl` in `PROVIDER_FACTORIES` with `?? PROVIDER_PROFILES[x].model/baseUrl` fallbacks, restoring the explicit defaults that were inadvertently removed.
+- **Wrong error code in `handleInfo` test (测试中错误码断言有误)** — `cli-handlers.test.ts` was asserting `ERR_NOT_FOUND` for an empty-symbol call; corrected to `ERR_MISSING_PARAM`.
+
+### Changed
+
+- **GoogleNewsRSSStrategy fetch injection (GoogleNewsRSS 策略 fetch 依赖注入)** — Constructor now accepts an optional `fetch` implementation, enabling offline unit tests without `global.fetch` mutation and eliminating test-side global state pollution.
+- **`cli-handlers` factory pattern (`cli-handlers` 工厂模式)** — Refactored to `createHandlers(deps?)` for dependency injection, replacing module-level mocking with per-test handler instances.
+- **Lazy Chromium startup in deep mode (深度模式懒启动 Chromium)** — `enrichWithFullContent` now receives a `getPage` factory instead of a pre-resolved `Page`, deferring browser launch until the first article actually requires it. RSS-only paths with `deepMode=true` no longer spin up Chromium unnecessarily.
+- **BrowserManager safe shutdown (浏览器管理器安全关闭)** — `close()` now awaits any in-flight `pagePromise` before calling `browser.close()`, preventing zombie Chromium processes when shutdown races browser launch.
+- **Concurrent stock info + analysis (股票信息与分析并发执行)** — `useAnalysis` now fires `getStockInfo` and `startAnalysis` concurrently. The info fetch updates `partialInfo` as a side-effect, removing the sequential delay that previously blocked analysis startup.
+
+## [0.4.1] - 2026-04-22
+
+### Fixed
+
+- **AI provider empty response crash (AI 提供商空响应崩溃)** — OpenAI and Anthropic providers now check array length before accessing `choices[0]` / `content[0]`. Previously, an empty response from the API would throw an uncaught `TypeError`.
+- **Playwright silent navigation failure (Playwright 导航静默失败)** — `PlaywrightStrategy` now distinguishes `TimeoutError` (partial page load, continue parsing) from fatal navigation errors (DNS failure, connection refused). Fatal errors now return `[]` immediately instead of parsing an empty page.
+- **`list_models` IPC regression (list_models IPC 回归)** — Frontend was sending `base_url` (snake_case) to Tauri's `invoke()`, which requires camelCase `baseUrl`. This caused every "List Models" request to silently fail.
+- **API key leak in debug log (调试日志 API Key 泄漏)** — The sidecar's debug log at `/tmp/solanna-sidecar.log` was writing the full config including plaintext API keys on every invocation. The `apiKey` field is now redacted as `[REDACTED]`.
+- **Provider type coercion (Provider 类型强制转换)** — `resolveConfig` previously used `as ProviderType` cast without runtime validation. Now validates against `PROVIDER_PROFILES` keys, falling back to `'ollama'` for unknown values.
+- **Stock code regex false match (股票代码正则误匹配)** — `detectChinaStock` and the display-name extractor in `parseSymbol` now use `/(?<!\d)\d{6}(?!\d)/` (word-boundary lookahead/lookbehind) to avoid matching 7+ digit strings as valid 6-digit codes.
+- **Sidecar error format inconsistency (Sidecar 错误格式不一致)** — All `outputJson({ error: string })` paths in `index.ts` now emit the standard `{ error: { code, message } }` envelope, consistent with the main analysis flow.
+- **Browser fallback error masking (浏览器模式错误掩盖)** — The non-Tauri bridge fallback in `ipc.ts` now includes the original error reason in the thrown message, instead of replacing all network errors with a generic "test environment not ready" string.
+- **Config version check (配置版本检查)** — `_version` comparison now uses `String()` coercion on both sides, preventing a false mismatch when the stored value is an integer rather than a string.
+
+### Changed
+
+- **Build scripts (构建脚本)** — `dev` and `build` npm scripts now automatically compile the sidecar binary before starting Vite, eliminating the need to manually run `sidecar:build` after code changes.
+- **Settings deep merge (设置深度合并)** — `useSettings` now performs a per-provider deep merge of `providerConfigs` on load, so adding a new provider profile no longer wipes out saved API keys for other providers.
+- **Sidecar empty stdout handling (Sidecar 空输出处理)** — The Rust layer now returns a structured `{ "error": "..." }` JSON when sidecar stdout is empty, with the process exit code included for easier debugging.
+- **Ollama default host (Ollama 默认地址)** — Changed from `localhost:11434` to `127.0.0.1:11434` to avoid IPv6 resolution issues on some systems.
+
+## [0.4.0] - 2026-04-20
+
+### Added
+
+- **Real-time quotes in search suggestions (实时搜索建议行情)** — The search dropdown now integrates live price and change% for each stock. Powered by Sina Finance batch quote API for instantaneous market feedback as you type.
+- **Enhanced smart search fallback (智能搜索回退增强)** — `getStockInfo` now supports searching by name. If the input is not a standard ticker, the system automatically finds the best match and retrieves its data.
+
+### Changed
+
+- **Search result schema (搜索结果数据结构)** — `StockSearchResult` extended with optional `price`, `change`, and `changePercent` fields.
+- **Sidecar search logic (Sidecar 搜索逻辑)** — `searchStocks` now performs parallel fetching for suggestions and real-time quotes, merging them before returning to the UI.
+- **UI layout optimization (UI 布局优化)** — Search suggestions now use a space-between layout with improved visual clarity and red/green color coding for price changes.
+
+### Fixed
+
+- **US ticker parsing (美股代码解析)** — Improved `parseSymbol` logic to recognize a wider variety of US ticker formats.
+- **Smoke test stability (冒烟测试稳定性)** — Refined unknown symbol validation in smoke tests to align with the current service contract.
+
+## [0.3.0] - 2026-04-17
+
+### Changed (breaking internal refactor — no user-visible API changes)
+
+- **Settings schema 单一真源** — 移除 Rust 层 `AppSettings`/`ProviderConfig` 结构体；Rust 现在把 `app_settings` 作为 `serde_json::Value` 透传给 Sidecar，由 `configResolver.ts` 负责版本校验与字段解析。先前同一 schema 在前端 TS / Rust / Sidecar 三处重复定义，新增字段易漏同步。
+- **Provider 档案合并** — 原本分散在 `PROVIDER_DEFAULTS`（baseUrl+model）、`CONTENT_LIMITS`（截断）、`TIMEOUTS`（超时）三处的 provider 配置统一合并为 `PROVIDER_PROFILES: Record<ProviderType, ProviderProfile>`。新增 Provider 时 TypeScript 会强制补齐所有字段。
+- **Sidecar 共享类型路径统一** — 删除 `sidecar/types.ts` 桥接文件；所有 Sidecar 代码直接从 `../shared/types` 导入 `StockNews` / `AIAnalysisResult`。消除"两条等价导入路径"的歧义。
+- **Chromium 懒启动** — `scraper.ts` 现在通过 `ScrapeContext.getPage()` 延迟启动浏览器。A 股 RSS 成功 + `deepMode=false` 的路径完全跳过 Chromium 启动（省 1-3s）。
+- **Strategy 接口与实现分离** — `base.ts` 拆分为 `interface ScrapeStrategy`（所有策略）+ `abstract class PlaywrightStrategy`（模板方法）。`GoogleNewsRSSStrategy` 不再继承 `ScrapeStrategy` 并伪装 `getUrl()` 返回空串——现在直接实现接口，消除 Liskov 违规。
+- **符号归一化独立模块** — `StrategyRegistry.getEnhancedSymbol` 移至 `sidecar/symbol.ts`，让策略注册表只负责策略排序。
+- **内容提取独立模块** — `scraper.ts` 中的 `extractFullContent` / `heuristicContentExtraction` / `htmlToMarkdown` 拆到 `sidecar/content-extractor.ts`，让 `scraper.ts` 只剩编排。
+- **Provider 类暴露 `kind` 字段** — `AIProvider` 接口新增 `readonly kind: ProviderKind`，使工厂派发结果可被单测断言（先前只能验证"有 analyze 方法"）。
+- **System prompt 集中化** — 原来三个 provider 各自硬编码 system prompt，现在统一使用 `prompts.ts` 的 `SYSTEM_PROMPT` 常量。
+
+### Added
+
+- **5 个新测试文件** — `sidecar/symbol.test.ts`、`sidecar/content-extractor.test.ts`、`sidecar/stock-info.test.ts`、`sidecar/strategies/registry.test.ts`，以及 `sidecar/parsers/exchange.test.ts` 的 `parseSymbol` 用例补全。测试总数从 57 增至 82。
+- **`performFullAnalysis` 依赖注入** — 新增可选 `deps` 参数接受 scrape / fetchInfo / enhance / createProvider 的 mock，替代 `mock.module()` 全局替换，解决 bun:test 跨文件 mock 状态泄漏。
+
+### Fixed
+
+- **API Key 误导性提示** — 设置界面的"本地加密存储"改为"仅存储在本地应用数据目录"。tauri-plugin-store 默认不加密，原提示可能让用户误判安全边界。
+- **Smoke-test 错误降级阶段** — 原测试断言一个已删除的 mock 错误消息，导致 phase 4 永远失败。改为验证"未知 symbol 返回空数组"的真实行为契约。
+
+## [0.2.3] - 2026-04-10
+
+### Fixed
+
+- **Settings version display** — Settings panel now shows the real app version read from `tauri.conf.json` via `getVersion()` API instead of the hardcoded `v0.1.3` string.
+- **A-share code-only search (zero results)** — Root cause identified: Google's headless-browser CAPTCHA blocked all Playwright-based Google News search results. Fix: A-share queries now use the Google News RSS feed (no JavaScript required, no CAPTCHA). RSS returns up to 40 articles per search.
+- **A-share GBK encoding** — Sina Finance API (`hq.sinajs.cn`) returns GBK-encoded text; `resp.text()` decoded it as UTF-8, producing garbled company names. Fixed by reading `arrayBuffer()` and decoding with `TextDecoder('gbk')`.
+- **Config version migration** — When settings stored in the old format (missing `_version`) are loaded, the migrated settings are now written back to the store so that the Rust layer reads the correct version on analysis. Previously only React state was updated.
+- **Empty stdout fallback** — If the sidecar produces no stdout output (crash or hang), the Rust layer now returns a structured `{"error":"..."}` JSON instead of an empty string, preventing the generic "分析服务无响应" error from masking the real cause.
+
+### Changed
+
+- **A-share news strategy** — For A-share pure-code inputs (e.g. `300866`), the sidecar now fetches the company name from Sina Finance first, then passes `"公司名+code"` to the scraper so the RSS query uses `"公司名" 股票` (exact-match, high hit rate).
+- **`extractExternalLinks`** — Two-pass regex scan (direct links + Google redirects) merged into a single-pass alternation regex for cleaner code.
+- **`todayISO()` utility** — Extracted shared `new Date().toISOString().split('T')[0]` pattern to `sidecar/utils.ts`.
+
+## [0.2.2] - 2026-04-10
+
+### Fixed
+
+- **A 股纯代码搜索零命中** — 用户仅输入 6 位代码（如 `300866`）时，搜索词由 `"300866" 股票 新闻`（精确匹配）改为 `300866 股票 新闻`（宽松匹配）。中文财经新闻标题几乎不出现纯数字代码，加引号导致搜索零结果；有股票名称时（如 `隆基绿能601012`）仍使用精确匹配。
+- **Sidecar binary 过期** — 重新编译 binary，使其包含 v0.2.1 中所有已提交的修复（configResolver、outputJson guard、logger 统一等）。
+
+## [0.2.1] - 2026-04-10
+
+### Added
+
+- **`sidecar/analysis.test.ts`** — Unit tests for `performFullAnalysis`: normal path, empty news guard, non-blocking `stockInfo` failure, and AI fallback degradation (rating 50 / neutral)
+- **`src/lib/ipc.test.ts`** — Unit tests for `parseAnalysisResponse` covering all validation branches: valid response, empty/whitespace input, `error` field propagation, malformed `rating`, non-array `news`, missing `analysis` field
+
+### Fixed
+
+- **stdout single-write guard** — Sidecar now throws `[PROTOCOL]` on double `outputJson()` calls; Rust layer uses last-non-empty-line extraction to tolerate any spurious output
+- **DOM content selector** — Fallback container ranking now sorts by paragraph count first (correctness fix), with text length as tiebreaker; paragraph counts are cached to avoid O(n²) DOM traversal
+- **Dead code removal** — Removed `NVDA_REAL` / `FAIL` test fixture branches from production `scraper.ts`; removed unused `strategies/utils.ts`
+
+### Changed
+
+- **Config versioning** — `CONFIG_VERSION = "2"` added; sidecar throws on version mismatch rather than silently misreading fields; frontend stamps version on every save with one-time legacy migration
+- **IPC abstraction** — `startAnalysis()` returns `FullAnalysisResponse` directly; all JSON parsing, error extraction, and schema validation centralized in `ipc.ts`
+- **Provider registry** — Replaced `switch/case` with `PROVIDER_FACTORIES` data map; unknown provider types now emit a warning before falling back to OpenAI
+- **Logger unification** — All `console.error()` calls replaced with structured `logger` across sidecar, analysis, and all AI providers
+- **`performFullAnalysis` decomposed** — Split into `fetchMarketData` (parallel stock info + news) and `analyzeWithAI` (AI call with fallback)
+- **Browser config centralized** — `BROWSER_LAUNCH_ARGS` and `BROWSER_CONTEXT_DEFAULTS` extracted to `sidecar/config.ts`; `playwright-core` pinned to exact version `1.59.1`
+
+## [0.2.0] - 2026-04-10
+
+### Added
+
+- **Sidecar bridge** (`scripts/sidecar-bridge.ts`) — HTTP bridge server for E2E and browser-based testing; allows the UI to call the real sidecar binary without Tauri.
+- **`sidecar/utils.ts`** — Extracted shared utility functions (timeout wrapper, error normalization) used across sidecar modules.
+
+### Changed
+
+- **Rust layer simplified** — Tauri core is now a transparent proxy: reads config and spawns the sidecar, with all business logic moved to the sidecar. `lib.rs` reduced from ~200 lines to ~80 lines.
+- **Shared constants** — Provider default URLs and model names consolidated in `shared/constants.ts`, eliminating duplication between frontend and sidecar.
+- **Scraper robustness** — Strategy base interface extended with result validation; scrapers now retry and fall back gracefully on partial failures.
+- **Prompt improvements** — Analysis prompt restructured for clearer output and more consistent sentiment scoring.
+
+## [0.1.3] - 2026-04-09
+
+### Added
+
+- **Multi-provider AI support** — Added Anthropic Claude and DeepSeek providers; settings panel redesigned as a dropdown with independent per-provider config storage
+- **Google News search strategy** — New primary scrape strategy that searches Google News by stock name/code, fixing zero-result failures for small-cap A-shares (e.g. STAR Market 688xxx) that have no Google Finance quote page
+- **Stock info card** — Displays exchange label (STAR Market / SSE / SZSE / BSE), stock name, latest price, and change% above analysis results
+- **Mixed-format input** — Accepts inputs like "锴威特688693"; automatically extracts the Chinese display name and 6-digit code
+- **Sina Finance API** — Fetches real-time A-share price data (price, change, change%) from `hq.sinajs.cn`
+
+### Fixed
+
+- **Silent analysis failure** — Fixed compiled Bun sidecar not flushing stdout buffer when connected to a pipe (`process.exit()` skips flush in full-buffered mode)
+- **Rust stdout race condition** — Removed `break` on `Terminated` event to drain all pending stdout events before the loop exits
+
+### Changed
+
+- Default AI provider changed to Ollama (`qwen3.5:9b`)
+
+## [0.1.2] - 2026-04-09
+
+### Improved
+
+- **Architecture refactor** — Shared type definitions (`shared/types.ts`) as single source of truth across frontend and sidecar; eliminated 3 duplicate interface definitions
+- **JSON config passing** — Rust→Sidecar config injection changed from fragile positional CLI args to single JSON parameter; adding new config fields now requires changes in 2 files instead of 4+
+- **Provider factory** — AI provider creation moved to `providers/registry.ts` factory; `analysis.ts` no longer imports concrete providers
+- **Unified error handling** — Extracted `toErrorMessage()` utility; all error catch blocks use type-safe `instanceof` checks instead of `as any`
+- **Centralized config** — Magic numbers (timeouts, content limits, model defaults) consolidated in `sidecar/config.ts`
+- **Runtime validation** — Sidecar JSON responses validated before rendering; malformed AI output now shows clear error message
+- **Component extraction** — Dashboard (207→140 lines), SettingsModal (177→140 lines) via AnalysisPanel and ProviderSelector components
+- **Shared FormInput** — OpenAI/Ollama settings forms share a common input component
+- **Store singleton** — `src/lib/store.ts` ensures all hooks share one store instance with retry-on-failure
+- **OllamaForm debounce** — Model list fetch debounced (500ms) to prevent IPC spam on every keystroke
+- **PriceChart placeholder** — Replaced misleading hardcoded mock data with honest "coming soon" placeholder
+
+### Fixed
+
+- **`page.evaluate` compiled binary bug** — Inline arrow function for Playwright evaluate to prevent breakage in Bun-compiled sidecar binary
+- **Settings migration** — `model→provider` field rename with backward-compatible migration that persists to store
+- **Default aiModel mismatch** — Fixed default Ollama model name being used with OpenAI provider
+
+### Added
+
+- **Test suite expansion** — 12→34 unit tests (exchange detection, provider factory, withTimeout, sad-path validation, HTML resilience)
+- **Integration test isolation** — Flaky scraper test renamed to `.integration.ts`, excluded from default `bun test` (86s→82ms)
+- **SentimentBar data-testid** — Tests decoupled from Tailwind CSS class names
+
+### Removed
+
+- Dead `AnalysisPayload` export and unused `canHandle()` from ScrapeStrategy interface
+
+## [0.1.1] - 2026-04-06
+
+### Fixed
+
+- **A-share support** — Google Finance and Yahoo Finance now correctly resolve Shanghai (SHA/.SS), Shenzhen (SZE/.SZ), and Beijing BSE (BJS/.BJ) exchanges; Chinese stock codes like `601012` or `隆基绿能601012` no longer cause JSON parse errors
+- **Editable watchlist** — watchlist now supports add/remove with persistence via `tauri-plugin-store`; previously hardcoded and read-only
+- **Functional settings toggles** — "Auto Analyze" and "Deep Mode" toggles in General Settings now save state and take effect
+- **Deep mode wired end-to-end** — `deepMode=false` now skips full article extraction for faster analysis; the setting flows from UI → Rust → Sidecar CLI args
+- **Error propagation** — sidecar errors are now returned as structured JSON to the frontend instead of silently discarding stdout
+
+### Changed
+
+- Removed `-alpha` label; the core pipeline is stable
+
+## [0.1.0] - 2026-04-06
+
+### Added
+
+- **Core analysis pipeline** — full end-to-end flow: stock symbol input → news scraping → AI analysis → scored result
+- **Multi-source scraping** — Playwright-based scraper with Strategy pattern supporting Google Finance and Yahoo Finance; extracts full article body for the first 3 results
+- **AI provider support** — OpenAI (GPT-4o default) and Ollama (local models) via pluggable `AIProvider` interface
+- **Dashboard UI** — three-column layout with Watchlist, Search/Analysis panel, and results
+- **PriceChart** — interactive price chart powered by lightweight-charts
+- **SentimentBar** — bullish/bearish visual indicator
+- **Settings modal** — per-provider configuration (API key, base URL, model name) persisted locally via `tauri-plugin-store`
+- **Config injection** — Tauri core reads `settings.json` and injects config into Sidecar via CLI args at runtime
+- **News body extraction** — deep content fetch for richer AI analysis context
+- **Persistent settings** — all API configurations stored locally, never leaves the device
+
+### Infrastructure
+
+- GitHub Actions CI — cross-platform build validation (macOS ARM64, Ubuntu 24.04, Windows)
+- GitHub Actions Release — automated installer builds triggered on version tags
+- Pre-push hooks via lefthook — TypeScript type-check before every push
+- Multi-layer test suite — Vitest (frontend), Bun test (sidecar unit), Cargo test (Rust)
+
+### Architecture
+
+- Clean Architecture with unidirectional dependency flow: UI → Tauri Core (Rust) → Sidecar (Bun)
+- Sidecar communicates via stdout JSON; stderr reserved for debug logs
+- Anti-Corruption Layer via DTOs in `src/lib/api-types.ts`

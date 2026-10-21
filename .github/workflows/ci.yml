@@ -1,0 +1,127 @@
+name: "Solanna CI"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+# 仓库默认给 workflow token 的是 write；CI 只读代码、只构建，不写任何 GitHub 资源
+# （tauri-action 未传 tagName，不会建 Release）。收到只读，缩小 token 被滥用的面。
+permissions:
+  contents: read
+
+jobs:
+  # 平台无关的静态门禁，单跑 ubuntu 一次即可（放进矩阵会白跑三遍）。
+  # 与 lefthook 的 pre-push 同源，但那层可被 --no-verify 绕过，这里才是真门禁。
+  # 不给矩阵作业加 needs：两者并行，格式问题会更早红，但不拖慢正常构建。
+  quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2.2.0
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Check formatting (biome)
+        run: bun run format:check
+
+      # 保持阻塞（不加 continue-on-error）：--audit-level=high 只对 high/critical 报警，
+      # 常年不响，真响了就是该立刻停下来看的事；非阻塞的黄字在单人维护下等于没人看。
+      # 命中暂时无补丁的传递依赖时，用 package.json 的 overrides 钉版本，而不是关掉这条。
+      - name: Security audit
+        run: bun audit --audit-level=high
+
+  # 前端 E2E 冒烟：默认套件跑在 happy-dom 上、没有 canvas，图表渲染断不到（见 CLAUDE.md）。
+  # 单跑 ubuntu：断的是「K 线画没画出来」这件与操作系统无关的事，进矩阵是白跑三遍。
+  # 浏览器用 runner 预装的 Chrome，走 BrowserManager 的系统浏览器回退，不额外下载 Playwright 内核。
+  e2e:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2.2.0
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Frontend E2E smoke
+        run: bun run test:e2e
+
+  test-and-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, ubuntu-24.04, windows-latest]
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2.2.0
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install dependencies
+        run: bun install
+
+      # 聚合 runner：前端 vitest + sidecar 全量单测 + shared 跨层契约。
+      # 三个套件都离线、总耗时秒级，没有理由像以前那样只挑两个 sidecar 文件跑。
+      - name: Run unit tests
+        run: bun run test
+
+      - name: Build sidecar
+        shell: bash
+        run: |
+          TARGET_TRIPLE=$(rustc -Vv | grep host | cut -d ' ' -f 2)
+          # 设置 OUTFILE 以适配 build-script.ts
+          export OUTFILE="src-tauri/bin/solanna-backend-$TARGET_TRIPLE"
+          # 设置 BUN_TARGET (适配 macos aarch64 等)
+          if [ "${{ matrix.platform }}" = "macos-latest" ]; then
+            export BUN_TARGET="bun-darwin-arm64"
+          elif [ "${{ matrix.platform }}" = "windows-latest" ]; then
+            export BUN_TARGET="bun-windows-x64"
+            export OUTFILE="$OUTFILE.exe"
+          else
+            export BUN_TARGET="bun-linux-x64"
+          fi
+          bun sidecar/build-script.ts
+
+      - name: Verify Sidecar
+        shell: bash
+        run: |
+          TARGET_TRIPLE=$(rustc -Vv | grep host | cut -d ' ' -f 2)
+          BINARY="src-tauri/bin/solanna-backend-$TARGET_TRIPLE"
+          if [ "${{ matrix.platform }}" = "windows-latest" ]; then BINARY="$BINARY.exe"; fi
+          bun scripts/verify-bundle.ts "$BINARY"
+
+      # 放在 sidecar 构建之后：tauri build.rs 会校验 externalBin 存在，缺二进制则编译失败。
+      # 其中 test_slot_sentinels_match_shared_manifest 守住 Rust 哨兵与 shared/actions.ts 的一致性。
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --no-bundle

@@ -1,0 +1,56 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+target/
+src-tauri/target/
+sidecar/solanna-backend-*
+# sidecar 二进制是每次构建现场生成的产物（bun run sidecar:build / CI 的 Build sidecar 步骤），
+# 曾被误提交 8 次、在历史里压了 550+ MB。任何流程都不依赖它进仓库，别再提交。
+src-tauri/bin/solanna-backend-*
+*.lockb
+# 泛忽略挡掉零散 .lock，但两个 lockfile 是依赖的真源，必须进仓库——
+# 交付的是二进制，锁不住版本就没有可复现的构建
+*.lock
+!bun.lock
+!src-tauri/Cargo.lock
+# 本项目用 bun.lock 锁依赖；npm 生成的 lockfile 不是真源，别再提交进来
+package-lock.json
+
+# 临时构建产物 / 调试输出（历史曾误入仓库，参见 brooks-sweep 修复）
+output.json
+test-bin
+test-bun-build
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Worktrees
+.worktrees/
+worktrees/
+.playwright-mcp/
+# 头脑风暴工具的本地会话状态（server.pid / idle-timeout 标记 / 草图 HTML）。
+# 与 docs/superpowers/ 的 plan、spec 无关，那批文档是正式产物、继续进仓库。
+.superpowers/

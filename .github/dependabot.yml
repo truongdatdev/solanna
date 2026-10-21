@@ -1,0 +1,40 @@
+version: 2
+updates:
+  # 每个生态的 patch/minor 合并成一个 PR，避免每周几十个单包 PR 淹没列表；
+  # major 不分组、单独开 PR——破坏性变更必须人工读 changelog
+  # （如 lightweight-charts v4→v5 的 series API 迁移）。
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      bun-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      # chromium-bidi 的版本不是我们选的，由 playwright-core 的预打包产物决定：
+      # coreBundle.js 硬编码 require("chromium-bidi/lib/cjs/bidiMapper/BidiMapper")，
+      # 而该目录自 16.0.0 起就没了（16 挪到 lib/、17 的 gn migration 挪到
+      # out/Default/gen/src/）。升任何 ≥16 的版本都让 sidecar 的 bun build --compile
+      # 直接报 "Could not resolve"——PR #6（15→17.0.2）实测三平台全挂。
+      # 换句话说它是 playwright-core 的隐式对等依赖，只能跟着 playwright-core 一起动：
+      # 升级 playwright-core 后请对照其 coreBundle.js 里的 require 路径再定版本。
+      # 只挡 >=16，15.x 内的更新（含安全补丁）照常提 PR：搬走 lib/cjs 的是 16.0.0，
+      # 15 线内没有该变更；万一有，PR 的 CI 会因 sidecar 编译失败挡下，不会自动合入。
+      - dependency-name: chromium-bidi
+        versions: ['>=16']
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]

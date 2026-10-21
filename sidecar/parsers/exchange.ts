@@ -1,0 +1,157 @@
+/**
+ * A 股交易所代码检测工具
+ * 从 symbol（可为 "601012"、"隆基绿能601012" 等格式）中提取 6 位数字代码
+ * 并根据首位数字推断交易所
+ */
+export interface ChinaStockInfo {
+  code: string;
+  googleSuffix: string; // Google Finance 后缀，如 "SHA"
+  yahooSuffix: string; // Yahoo Finance 后缀，如 ".SS"
+  sinaPrefix: string; // 新浪财经接口前缀，如 "sh"
+}
+
+/**
+ * 美股信息
+ */
+export interface USStockInfo {
+  symbol: string; // 如 "AAPL"
+  sinaPrefix: string; // 新浪财经接口前缀 "gb_"
+}
+
+/**
+ * 港股信息
+ */
+export interface HKStockInfo {
+  code: string; // 补零后的 5 位标准代码，如 "00700"
+}
+
+/**
+ * 解析后的输入结构，支持中文名+代码混合输入（如 "锴威特688693"）
+ */
+export interface ParsedSymbol {
+  rawInput: string;
+  displayName?: string; // 从输入中提取的中文名（如 "锴威特"）
+  chinaInfo?: ChinaStockInfo;
+  usInfo?: USStockInfo;
+  hkInfo?: HKStockInfo;
+}
+
+/**
+ * 解析用户输入，提取股票名称与股票代码
+ * 支持格式：纯代码 "688693"、纯名称 "AAPL"、混合 "锴威特688693"、带前缀 "sh601012" / "gb_aapl"、港股 "0700.HK" / "hk00700"
+ */
+export function parseSymbol(input: string): ParsedSymbol {
+  if (!input) return { rawInput: '' };
+  const trimmed = input.trim();
+
+  // 0. 尝试识别显式前缀（如 sh601012, gb_aapl）
+  const explicitMatch = trimmed.match(/^(sh|sz|bj|gb_)([a-z0-9.]+)/i);
+  if (explicitMatch) {
+    const prefix = explicitMatch[1].toLowerCase();
+    const coreSymbol = explicitMatch[2].toUpperCase();
+
+    if (prefix === 'gb_') {
+      return {
+        rawInput: trimmed,
+        usInfo: { symbol: coreSymbol, sinaPrefix: 'gb_' },
+      };
+    } else {
+      const chinaInfo = detectChinaStock(coreSymbol);
+      if (chinaInfo) {
+        return {
+          rawInput: trimmed,
+          chinaInfo: { ...chinaInfo, sinaPrefix: prefix },
+        };
+      }
+    }
+  }
+
+  // 1. 尝试识别港股（须带显式港股标记）
+  const hkCode = detectHKStock(trimmed);
+  if (hkCode) {
+    return { rawInput: trimmed, hkInfo: { code: hkCode } };
+  }
+
+  // 2. 尝试识别 A 股（数字匹配）
+  const chinaInfo = detectChinaStock(trimmed);
+  if (chinaInfo) {
+    // 提取 6 位代码前后的非数字文本作为显示名称
+    const nameCandidate = trimmed.replace(/(?<!\d)\d{6}(?!\d)/, '').trim();
+    return {
+      rawInput: trimmed,
+      displayName: nameCandidate || undefined,
+      chinaInfo,
+    };
+  }
+
+  // 3. 尝试识别美股（通常为纯字母，2-5位）
+  // 注意：此处简化处理，非 A 股且不含非法字符的即尝试作为美股处理
+  const usMatch = trimmed.match(/^[A-Za-z]+$/);
+  if (usMatch) {
+    const symbol = trimmed.toUpperCase();
+    return {
+      rawInput: trimmed,
+      usInfo: {
+        symbol,
+        sinaPrefix: 'gb_',
+      },
+    };
+  }
+
+  return { rawInput: trimmed };
+}
+
+/**
+ * 尝试识别港股，返回补零后的 5 位标准代码；非港股返回 null。
+ *
+ * 只认带显式港股标记的两种写法（Yahoo 的 "0700.HK"、新浪/腾讯的 "hk00700"）。
+ * **裸数字一律不认**：4–5 位裸数字更可能是 A 股代码少打一位，认成港股会把一次输入
+ * 失误变成一份查错了标的、却看不出异常的分析。
+ */
+function detectHKStock(symbol: string): string | null {
+  const match = symbol.match(/^(\d{1,5})\.hk$/i) ?? symbol.match(/^hk(\d{1,5})$/i);
+  return match ? match[1].padStart(5, '0') : null;
+}
+
+/**
+ * 尝试从 symbol 中识别 A 股代码，返回交易所信息
+ * 返回 null 表示非 A 股，应按美股处理
+ */
+export function detectChinaStock(symbol: string): ChinaStockInfo | null {
+  const match = symbol.match(/(?<!\d)\d{6}(?!\d)/);
+  if (!match) return null;
+
+  const code = match[0];
+  const first = code[0];
+
+  if (first === '6') {
+    return { code, googleSuffix: 'SHA', yahooSuffix: '.SS', sinaPrefix: 'sh' };
+  }
+  if (first === '0' || first === '3') {
+    return { code, googleSuffix: 'SZE', yahooSuffix: '.SZ', sinaPrefix: 'sz' };
+  }
+  // 北交所：430/83x/87x/88x 为存量号段，920 为 2024 年启用的新号段。
+  // 920 不能简化为「9 开头」——900xxx 是沪 B 股，两者归属不同交易所。
+  if (first === '4' || first === '8' || code.startsWith('920')) {
+    return { code, googleSuffix: 'BJS', yahooSuffix: '.BJ', sinaPrefix: 'bj' };
+  }
+
+  return null;
+}
+
+/**
+ * 标的的识别性词元——文章命中其一才算与本标的有关（东财资讯与 Google 新闻搜索共用）。
+ *
+ * 搜索源什么都能命中：东财是全文子串匹配，实测 'NON_EXISTENT_99999' 靠正文里的
+ * "39999"、"99999" 匹配到炒鞋和温州经济两条新闻。放行这类命中会毁掉
+ * `fetchMarketBundle` 依赖的"查无此股 → 0 条"不变量，让用户拿到一份基于无关新闻的分析，
+ * 而不是"请确认代码是否正确"的提示。
+ */
+export function relevanceTokens(symbol: string): string[] {
+  const parsed = parseSymbol(symbol);
+  const tokens = [parsed.displayName, parsed.chinaInfo?.code, parsed.hkInfo?.code].filter(
+    (t): t is string => !!t,
+  );
+  // 解析不出结构（美股 / 无效输入）时退回原始输入整体匹配
+  return (tokens.length > 0 ? tokens : [symbol]).map((t) => t.toLowerCase());
+}

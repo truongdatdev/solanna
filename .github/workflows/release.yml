@@ -1,0 +1,292 @@
+name: "Release"
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# 双语 Release Notes 的路径，verify（校验存在）与 release（读进 releaseBody）共用一处声明
+env:
+  NOTES_FILE: docs/release-notes/${{ github.ref_name }}.md
+
+jobs:
+  # 发版前置门禁。tag 一推、构建一绿，Release 就公开上线并推送自动更新，中间没有人工
+  # 复核 Draft 的闸门——所以把 release-checklist 里「打 tag 前确认 main CI 全绿」这条
+  # 人工步骤变成机制：测试不过就不进构建，也就发不出去。
+  verify:
+    runs-on: ubuntu-24.04
+    # 只跑测试，不碰 Release；写权限只留给下面的 release job
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      # tauri-action v1 每跑一次都会用 releaseBody 覆写已存在 Release 的标题与正文，无开关可关。
+      # 所以正文不能像以前那样事后手工 `gh release edit` 补——一次 `gh run rerun`
+      # （AppImage 上传 flaky 时的标准处理）就会把它打回默认文案。改成随 tag 一起进仓库，
+      # 重跑只写回同一份内容，覆写因此幂等。这一步放在装依赖之前，缺文件几秒内就红。
+      - name: Check release notes
+        run: |
+          if [ ! -s "$NOTES_FILE" ]; then
+            echo "::error::缺少 $NOTES_FILE —— 发版前必须写好双语 Release Notes 并随 tag 提交（模板见 .claude/rules/release-checklist.md）"
+            exit 1
+          fi
+          if [ "$(grep -c '^## Solanna' "$NOTES_FILE")" -lt 2 ]; then
+            echo "::error::$NOTES_FILE 只有一个语言版本 —— 中英文各一份、内容对等是硬要求"
+            exit 1
+          fi
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2.2.0
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run unit tests
+        run: bun run test
+
+  release:
+    needs: verify
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: "--target aarch64-apple-darwin"
+            rust-targets: aarch64-apple-darwin
+            bun-target: bun-darwin-arm64
+            sidecar-name: solanna-backend-aarch64-apple-darwin
+
+          - platform: ubuntu-24.04
+            args: "--bundles deb,appimage"
+            bun-target: bun-linux-x64
+            sidecar-name: solanna-backend-x86_64-unknown-linux-gnu
+
+          - platform: windows-latest
+            bun-target: bun-windows-x64
+            sidecar-name: solanna-backend-x86_64-pc-windows-msvc.exe
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2.2.0
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # Tauri 内置的 linuxdeploy(2024-07 老版)给 AppDir 解析依赖时，对 sidecar
+      # (Bun 编译的大二进制)跑 ldd 失败会直接 abort，导致 AppImage 打包 "failed to run linuxdeploy"。
+      # 预置较新版 linuxdeploy(遇 ldd 失败改为警告跳过)到 Tauri 缓存覆盖之。
+      # pin SHA256 防供应链篡改：哈希不符则构建 loud 失败，需人工复核后更新此值。
+      #
+      # 为什么从本仓库的 release 取、而不是直连上游：上游把它发在**滚动** tag continuous 上，
+      # 每隔约一个月重建、原地换掉资产，钉死的哈希必然失配、当场卡住发版
+      # (2026-06-01 / 07-12 / 08-01 连卡三次)。也不能改钉上游的不可变 tag——最新正式 tag
+      # 1-alpha-20251107-1 早于我们依赖的两处修复(2026-04-27 Fix dynamic linking on Linux、
+      # 2026-05-12 Don't fail if missing dependency is in excludeLibraryPatterns)，
+      # 钉过去等于退回 abort 之前。镜像一份到自己的 release 资产，字节就永不变了。
+      #
+      # 镜像的溯源与「什么时候该换新」写在该 release 的正文里：
+      # https://github.com/truongdatdev/solanna/releases/tag/linuxdeploy-continuous-20260801
+      # 换新时建**新** release(勿覆盖旧资产，否则旧 tag 的构建不可复现)，再同步下面两个值。
+      - name: Pre-seed pinned linuxdeploy (Linux AppImage)
+        if: matrix.platform == 'ubuntu-24.04'
+        env:
+          # 上游 continuous @ 07333c6 "Update binutils to latest release" (2026-08-01) 的镜像，
+          # 即 v0.16.0 实际打出 AppImage 所用的那一份字节
+          LD_URL: https://github.com/truongdatdev/solanna/releases/download/linuxdeploy-continuous-20260801/linuxdeploy-x86_64.AppImage
+          LD_SHA256: 421ca71d5c69ea97c6309276232990d43df1dcece0edfaa26bbf926ff96ed12e
+        run: |
+          mkdir -p ~/.cache/tauri
+          curl -fsSL --retry 5 -o ~/.cache/tauri/linuxdeploy-x86_64.AppImage "${LD_URL}"
+          echo "${LD_SHA256}  ${HOME}/.cache/tauri/linuxdeploy-x86_64.AppImage" | sha256sum -c -
+          chmod +x ~/.cache/tauri/linuxdeploy-x86_64.AppImage
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Check macOS signing availability
+        id: check-signing
+        if: matrix.platform == 'macos-latest'
+        run: |
+          if [ -n "$APPLE_CERT" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "⚠️ APPLE_CERTIFICATE not configured, skipping code signing"
+          fi
+        env:
+          APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE }}
+
+      - name: Import Apple Certificate
+        if: matrix.platform == 'macos-latest' && steps.check-signing.outputs.available == 'true'
+        uses: apple-actions/import-codesign-certs@v7
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Build sidecar binary
+        shell: bash
+        env:
+          BUN_TARGET: ${{ matrix.bun-target }}
+          OUTFILE: src-tauri/bin/${{ matrix.sidecar-name }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          mkdir -p src-tauri/bin
+          # build-script.ts 内部已经处理了 BUN_NO_CODESIGN_MACHO_BINARY=1 和 xattr -cr 以及 codesign
+          bun sidecar/build-script.ts
+          # 验证二进制是否生成且已签名
+          ls -la src-tauri/bin/${{ matrix.sidecar-name }}
+
+      - name: Verify Sidecar Integrity & Signature
+        shell: bash
+        run: |
+          BINARY="src-tauri/bin/${{ matrix.sidecar-name }}"
+          bun scripts/verify-bundle.ts "$BINARY"
+
+      - name: Sidecar Self-Check
+        shell: bash
+        run: |
+          BINARY="src-tauri/bin/${{ matrix.sidecar-name }}"
+          echo "🚀 Running Sidecar Self-Check..."
+          
+          # 检查二进制依赖 (macOS)
+          if [ "${{ matrix.platform }}" = "macos-latest" ]; then
+            echo "📚 Dependencies (otool -L):"
+            otool -L "$BINARY"
+            
+            echo "🖋️ Signature Check (Pre-bundle):"
+            codesign -vvv --deep --strict "$BINARY"
+          fi
+
+          echo "✅ Sidecar binary verified (signature + dependencies checked above)."
+
+      - name: Check Signing Secrets
+        shell: bash
+        run: |
+          SIGNING_READY=true
+          if [ -z "${{ secrets.APPLE_CERTIFICATE }}" ]; then echo "⚠️ APPLE_CERTIFICATE missing"; SIGNING_READY=false; fi
+          if [ -z "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" ]; then echo "⚠️ APPLE_CERTIFICATE_PASSWORD missing"; SIGNING_READY=false; fi
+          if [ -z "${{ secrets.APPLE_SIGNING_IDENTITY }}" ]; then echo "⚠️ APPLE_SIGNING_IDENTITY missing"; SIGNING_READY=false; fi
+          if [ -z "${{ secrets.APPLE_ID }}" ]; then echo "⚠️ APPLE_ID missing"; SIGNING_READY=false; fi
+          if [ -z "${{ secrets.APPLE_PASSWORD }}" ]; then echo "⚠️ APPLE_PASSWORD missing"; SIGNING_READY=false; fi
+          if [ -z "${{ secrets.APPLE_TEAM_ID }}" ]; then echo "⚠️ APPLE_TEAM_ID missing"; SIGNING_READY=false; fi
+          
+          if [ "$SIGNING_READY" = true ]; then
+            echo "✅ All macOS signing secrets are present. Pipeline will attempt signing and notarization."
+          else
+            echo "❌ Signing secrets incomplete. macOS build will be unsigned and may be marked as 'damaged'."
+          fi
+
+      - name: Deep Cleanup of Extended Attributes
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          echo "🧹 Cleaning up attributes for signing..."
+          find . -type f -exec xattr -c {} \; || true
+
+      # verify job 已确认文件存在且是双语的，这里只负责读进 step output
+      - name: Load release notes
+        id: notes
+        shell: bash
+        run: |
+          {
+            echo 'body<<SOLANNA_NOTES_EOF'
+            cat "$NOTES_FILE"
+            echo 'SOLANNA_NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish release (signed)
+        if: matrix.platform != 'macos-latest' || steps.check-signing.outputs.available == 'true'
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # 自动更新器签名私钥，缺失时 tauri-action 仍会构建但不生成 .sig/latest.json
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # linuxdeploy(AppImage 格式)嵌套调用时需自解压运行，避免 runner 无 FUSE
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Solanna ${{ github.ref_name }}"
+          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: Build and publish release (unsigned macOS)
+        if: matrix.platform == 'macos-latest' && steps.check-signing.outputs.available != 'true'
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 即便 Apple 证书缺失，更新器仍需用 minisign 私钥签名产物
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Solanna ${{ github.ref_name }}"
+          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: Staple and Final Verify (macOS)
+        if: matrix.platform == 'macos-latest' && steps.check-signing.outputs.available == 'true'
+        shell: bash
+        run: |
+          echo "🔍 Searching for generated DMG..."
+          DMG_PATH=$(find src-tauri/target -name "Solanna_*_aarch64.dmg" | head -n 1)
+          if [ -z "$DMG_PATH" ]; then
+            echo "❌ DMG not found! Skipping staple check."
+            exit 1
+          fi
+
+          echo "✅ Found DMG: $DMG_PATH"
+          
+          # 显式尝试装订公证票据 (Stapling)
+          echo "📨 Stapling notarization ticket..."
+          xcrun stapler staple "$DMG_PATH" || echo "⚠️ Stapling failed, maybe already stapled or notarization pending."
+
+          echo "📂 Mounting DMG for deep verification..."
+          mkdir -p /tmp/solanna_mnt
+          hdiutil attach "$DMG_PATH" -mountpoint /tmp/solanna_mnt
+
+          echo "🔍 Running Deep Integrity Check..."
+          bun scripts/verify-bundle.ts /tmp/solanna_mnt/Solanna.app
+
+          echo "🛡️ Verifying Gatekeeper Assessment..."
+          spctl --assess --type exec --context context:primary-signature --verbose /tmp/solanna_mnt/Solanna.app
+
+          echo "📤 Detaching DMG..."
+          hdiutil detach /tmp/solanna_mnt
+          
+          echo "✨ Bundle integrity verified successfully."
