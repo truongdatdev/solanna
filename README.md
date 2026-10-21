@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
   <img src="./public/solanna-logo.svg" alt="Solanna logo" width="88" />
 </p>
 
@@ -28,30 +28,30 @@ Built with **Tauri 2**, **React 19** and a compiled **Bun** sidecar, Solanna is 
 
 ### AI-powered research
 
-- **Sentiment analysis** — scans recent news for a ticker and returns a bullish/bearish breakdown with source-linked factor cards.
-- **Investor-master analysis** — runs up to 13 investor-master agents, each reasoning through its own framework, then synthesises their views into a consensus rating.
-- **Grounded chat** — answers questions using earnings reports, recent news and the quantitative metrics already loaded in the app, with citations back to the source.
-- **Bring your own model** — supports OpenAI, Anthropic, DeepSeek, GLM and local Ollama models. Models can be assigned per role.
+- **Sentiment analysis:** scans recent news for a ticker and returns a bullish/bearish breakdown with source-linked factor cards.
+- **Investor-master analysis:** runs up to 13 investor-master agents, each reasoning through its own framework, then synthesises their views into a consensus rating.
+- **Grounded chat:** answers questions using earnings reports, recent news and the quantitative metrics already loaded in the app, with citations back to the source.
+- **Bring your own model:** supports OpenAI, Anthropic, DeepSeek, GLM and local Ollama models. Models can be assigned per role.
 
 ### Quantitative analysis
 
-- **Composite quant score** — combines technical, fundamental and valuation signals, with volatility-aware adjustment.
-- **Natural-language screener** — translates plain-English criteria into a market-wide scan and shows how the query was interpreted before running it.
-- **Strategy backtesting** — reports total return, annualised return, trade count, buy-and-hold comparison, entries/exits and an equity curve.
-- **Master track record** — records directional calls locally and marks them to market so hit rates and an equal-weight NAV curve accumulate over time.
+- **Composite quant score:** combines technical, fundamental and valuation signals, with volatility-aware adjustment.
+- **Natural-language screener:** translates plain-English criteria into a market-wide scan and shows how the query was interpreted before running it.
+- **Strategy backtesting:** reports total return, annualised return, trade count, buy-and-hold comparison, entries/exits and an equity curve.
+- **Master track record:** records directional calls locally and marks them to market so hit rates and an equal-weight NAV curve accumulate over time.
 
 ### Market data and charts
 
-- **Interactive K-line charts** — MA/BOLL overlays, nine time ranges, MACD/RSI/KDJ/OBV/VWAP sub-charts, logarithmic scale, adjusted prices and benchmark comparison.
-- **Market overview** — major index bar, sector and concept leaderboards, fund-flow rankings and the Dragon-Tiger list for A-shares.
-- **Company profile (F10)** — business overview, revenue breakdown, shareholder structure and sector tags, loaded on demand.
-- **Redundant data sources** — quotes, candles, fundamentals and market data fall back across Tencent, Eastmoney, Sina and Yahoo.
+- **Interactive K-line charts:** MA/BOLL overlays, nine time ranges, MACD/RSI/KDJ/OBV/VWAP sub-charts, logarithmic scale, adjusted prices and benchmark comparison.
+- **Market overview:** major index bar, sector and concept leaderboards, fund-flow rankings and the Dragon-Tiger list for A-shares.
+- **Company profile (F10):** business overview, revenue breakdown, shareholder structure and sector tags, loaded on demand.
+- **Redundant data sources:** quotes, candles, fundamentals and market data fall back across Tencent, Eastmoney, Sina and Yahoo.
 
 ### Portfolio and workflow
 
-- **Portfolio tracking** — positions, live valuation, unrealised and daily P&L, and position weights, with currencies kept separate.
-- **Watchlist and price alerts** — quick-add symbols and receive system notifications when price thresholds are crossed.
-- **Local analysis history** — every analysis, deep analysis and screen is archived in SQLite and can be reopened in full.
+- **Portfolio tracking:** positions, live valuation, unrealised and daily P&L, and position weights, with currencies kept separate.
+- **Watchlist and price alerts:** quick-add symbols and receive system notifications when price thresholds are crossed.
+- **Local analysis history:** every analysis, deep analysis and screen is archived in SQLite and can be reopened in full.
 
 ## Installation
 
@@ -81,8 +81,8 @@ Windows SmartScreen may warn about unsigned executables. Choose **More info**, t
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) — package manager and sidecar runtime
-- [Rust](https://www.rust-lang.org/tools/install) — Tauri core
+- [Bun](https://bun.sh/): package manager and sidecar runtime
+- [Rust](https://www.rust-lang.org/tools/install): Tauri core
 - Platform dependencies required by [Tauri 2](https://v2.tauri.app/start/prerequisites/)
 
 ### Install and run
@@ -118,9 +118,9 @@ Solanna uses a strictly unidirectional three-layer architecture:
 React UI  ->  Tauri Core (Rust)  ->  Sidecar (Bun)
 ```
 
-- **Frontend (`src/`)** — React, TypeScript and Vite. All IPC goes through a single entry point; local history is stored in SQLite via `tauri-plugin-sql`.
-- **Tauri Core (`src-tauri/`)** — exposes one generic `invoke_sidecar` command, handles process lifecycle and keeps business logic out of Rust.
-- **Sidecar (`sidecar/`)** — a compiled Bun binary that scrapes news, computes quantitative metrics and communicates with AI providers.
+- **Frontend (`src/`):** React, TypeScript and Vite. All IPC goes through a single entry point; local history is stored in SQLite via `tauri-plugin-sql`.
+- **Tauri Core (`src-tauri/`):** exposes one generic `invoke_sidecar` command, handles process lifecycle and keeps business logic out of Rust.
+- **Sidecar (`sidecar/`):** a compiled Bun binary that scrapes news, computes quantitative metrics and communicates with AI providers.
 
 The `shared/` directory is the single source of truth for DTOs, CLI actions, provider profiles and market detection across all three layers.
 
@@ -180,3 +180,4 @@ Please report vulnerabilities privately through [GitHub Security Advisories](htt
 ## Disclaimer
 
 Solanna is a research and educational tool. Its output, including AI-generated ratings, master consensus, quantitative scores and backtest results, is not investment advice. Market data comes from public third-party sources and may be delayed, incomplete or incorrect. You are solely responsible for your investment decisions.
+
