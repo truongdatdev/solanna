@@ -1,94 +1,58 @@
-﻿<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./public/solanna-logo-dark.svg">
-    <img src="./public/solanna-logo.svg" alt="Solanna logo" width="88" />
-  </picture>
-</p>
+<div align="center">
+  <img src="./images/solanna-banner.png" alt="Solanna" width="900" />
+</div>
 
-<h1 align="center">Solanna</h1>
+# Solanna
 
-<p align="center">
-  <strong>An AI equity research desk that runs entirely on your machine.</strong>
-</p>
+Solanna is a local first AI equity research desk for US stocks and China A shares. It combines live news, quotes, fundamentals and quantitative signals in one workspace, with money flow and sector data for China A shares, then layers AI analysis on top.
 
-<p align="center">
-  <a href="https://github.com/truongdatdev/solanna/releases/latest"><img src="https://img.shields.io/github/v/release/truongdatdev/solanna" alt="Latest release" /></a>
-  <a href="https://github.com/truongdatdev/solanna/releases"><img src="https://img.shields.io/github/downloads/truongdatdev/solanna/total" alt="Downloads" /></a>
-  <a href="https://github.com/truongdatdev/solanna/stargazers"><img src="https://img.shields.io/github/stars/truongdatdev/solanna?style=social" alt="Stars" /></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey" alt="Platforms" />
-</p>
+The application runs on your machine. There is no hosted backend, and provider keys stay in local storage.
 
-![Solanna dashboard](./docs/screenshot-dashboard.png)
+[Issue tracker](https://github.com/truongdatdev/solanna/issues) | [License](LICENSE)
 
 ## Overview
 
-Solanna is a local-first desktop application for equity research. It brings live news, prices, fundamentals, money flow and quantitative signals together in one workspace, then layers AI analysis on top. Everything runs on your machine: there is no hosted backend, and your API keys never leave your device.
+Most research tools separate market data, news, screening and AI analysis into different products. Solanna keeps them in one desktop workspace, so a stock can move from discovery to a written research note without leaving the app.
 
-Built with **Tauri 2**, **React 19** and a compiled **Bun** sidecar, Solanna is designed for investors who want fast, explainable research without giving up control of their data.
+A typical research session moves through four stages.
 
-## Highlights
+1. Search for a ticker and load its quote, candlestick history, news and company profile.
+2. Review the quantitative score, valuation range, money flow and risk metrics.
+3. Run AI analysis, ask follow up questions or start a deep review with one or more investor agents.
+4. Save the result locally, revisit it later and compare new calls with the track record.
 
-### AI-powered research
+The desktop shell uses Tauri 2 and React 19. Data collection, quantitative calculations, backtests and provider calls run in a compiled Bun sidecar. Analysis history, portfolio positions and investor signals are stored in local SQLite.
 
-- **Sentiment analysis:** scans recent news for a ticker and returns a bullish/bearish breakdown with source-linked factor cards.
-- **Investor-master analysis:** runs up to 13 investor-master agents, each reasoning through its own framework, then synthesises their views into a consensus rating.
-- **Grounded chat:** answers questions using earnings reports, recent news and the quantitative metrics already loaded in the app, with citations back to the source.
-- **Bring your own model:** supports OpenAI, Anthropic, DeepSeek, GLM and local Ollama models. Models can be assigned per role.
+## Features
 
-### Quantitative analysis
+* **Market workspace.** Search US and China A share tickers by code or name and load quotes, news, fundamentals and quantitative data in one view.
+* **Candlestick charts.** Use MA and BOLL overlays, nine time ranges, MACD, RSI, KDJ, OBV and VWAP subcharts, logarithmic scale, adjusted prices and benchmark comparison.
+* **Market overview.** Follow a major index strip, China A share sector and concept leaderboards, fund flow rankings and the Dragon Tiger list.
+* **Company profile.** Read the business overview, revenue breakdown, shareholder structure and sector tags for A shares, loaded on demand.
+* **Quantitative score.** Combine technical, fundamental and valuation signals with a volatility adjustment.
+* **Natural language screener.** Describe criteria in plain language and scan the China A share market. The app shows how the request was interpreted before presenting the matches.
+* **Strategy backtesting.** Review total return, annualized return, trade count, win rate, maximum drawdown, Sharpe ratio, a buy and hold comparison, entries, exits and an equity curve.
+* **News sentiment.** Scan recent news for a ticker and return a bullish, bearish or neutral breakdown with factor cards linked to sources.
+* **Investor agent analysis.** Run up to 13 investor agents, each with its own framework, and combine their views into a consensus rating.
+* **Investor track record.** Record directional calls locally, mark them to market and show hit rates, average returns and an equal weight NAV curve.
+* **Grounded chat.** Ask follow up questions against earnings reports, recent news, quantitative metrics and earlier analysis, with citations back to the source.
+* **Provider flexibility.** Use OpenAI, Anthropic, DeepSeek, GLM or Ollama. Assign a different provider and model to core analysis, news tagging and chat.
+* **Portfolio tracking.** Record positions, live valuation, unrealized and daily profit and loss, position weights and separate currency totals.
+* **Watchlist and alerts.** Follow symbols in one list and receive system notifications when a price crosses a configured threshold.
+* **Local history.** Archive AI, deep, quant, backtest and screener results in SQLite and reopen them at any time.
+* **Interface languages.** Use the app in Chinese, English or Japanese.
 
-- **Composite quant score:** combines technical, fundamental and valuation signals, with volatility-aware adjustment.
-- **Natural-language screener:** translates plain-English criteria into a market-wide scan and shows how the query was interpreted before running it.
-- **Strategy backtesting:** reports total return, annualised return, trade count, buy-and-hold comparison, entries/exits and an equity curve.
-- **Master track record:** records directional calls locally and marks them to market so hit rates and an equal-weight NAV curve accumulate over time.
+## Quick start
 
-### Market data and charts
+The repository does not currently publish prebuilt installers. Build the desktop application from source.
 
-- **Interactive K-line charts:** MA/BOLL overlays, nine time ranges, MACD/RSI/KDJ/OBV/VWAP sub-charts, logarithmic scale, adjusted prices and benchmark comparison.
-- **Market overview:** major index bar, sector and concept leaderboards, fund-flow rankings and the Dragon-Tiger list for A-shares.
-- **Company profile (F10):** business overview, revenue breakdown, shareholder structure and sector tags, loaded on demand.
-- **Redundant data sources:** quotes, candles, fundamentals and market data fall back across Tencent, Eastmoney, Sina and Yahoo.
+### Requirements
 
-### Portfolio and workflow
+* [Bun](https://bun.sh/), used for dependency management, tests and the compiled sidecar
+* [Rust](https://www.rust-lang.org/tools/install) stable and the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform
+* An API key for a cloud provider, or a local Ollama installation
 
-- **Portfolio tracking:** positions, live valuation, unrealised and daily P&L, and position weights, with currencies kept separate.
-- **Watchlist and price alerts:** quick-add symbols and receive system notifications when price thresholds are crossed.
-- **Local analysis history:** every analysis, deep analysis and screen is archived in SQLite and can be reopened in full.
-
-## Installation
-
-Pre-built binaries are available on the [Releases](https://github.com/truongdatdev/solanna/releases/latest) page.
-
-### macOS
-
-If macOS reports that the app is damaged, clear the quarantine attribute:
-
-```bash
-xattr -cr /Applications/Solanna.app
-```
-
-### Linux
-
-```bash
-sudo dpkg -i Solanna_*_amd64.deb
-```
-
-WebKitGTK is required and is pre-installed on most GNOME-based distributions.
-
-### Windows
-
-Windows SmartScreen may warn about unsigned executables. Choose **More info**, then **Run anyway**.
-
-## Getting started
-
-### Prerequisites
-
-- [Bun](https://bun.sh/): package manager and sidecar runtime
-- [Rust](https://www.rust-lang.org/tools/install): Tauri core
-- Platform dependencies required by [Tauri 2](https://v2.tauri.app/start/prerequisites/)
-
-### Install and run
+### Run from source
 
 ```bash
 git clone https://github.com/truongdatdev/solanna.git
@@ -97,90 +61,122 @@ bun install
 bun tauri dev
 ```
 
-The development command compiles the sidecar binary for your platform before starting the app.
+The development command builds the sidecar, starts Vite and opens the Tauri window.
 
-### Build a release
+### Build a desktop bundle
+
+Build the sidecar for the target that matches your machine, then run the Tauri bundle command.
 
 ```bash
+# macOS Apple Silicon
+BUN_TARGET=bun-darwin-arm64 OUTFILE=src-tauri/bin/solanna-backend-aarch64-apple-darwin bun sidecar/build-script.ts
+
+# Linux x64
+BUN_TARGET=bun-linux-x64 OUTFILE=src-tauri/bin/solanna-backend-x86_64-unknown-linux-gnu bun sidecar/build-script.ts
+
+# Windows x64
+BUN_TARGET=bun-windows-x64 OUTFILE=src-tauri/bin/solanna-backend-x86_64-pc-windows-msvc.exe bun sidecar/build-script.ts
+
 bun tauri build
 ```
 
-To compile the sidecar for a specific target:
+The installer is written under `src-tauri/target/release/bundle`.
 
-```bash
-BUN_TARGET=bun-windows-x64 bun sidecar/build-script.ts
-```
+The examples use a POSIX shell. In PowerShell, set `$env:BUN_TARGET` and `$env:OUTFILE` before calling the build script.
 
-Supported targets: `bun-darwin-arm64`, `bun-darwin-x64`, `bun-linux-x64` and `bun-windows-x64`. Output is written to `src-tauri/bin/` using the Rust target triple expected by Tauri.
+Supported targets are `bun-darwin-arm64`, `bun-darwin-x64`, `bun-linux-x64` and `bun-windows-x64`. For an Intel Mac, use `bun-darwin-x64` with the `x86_64-apple-darwin` triple.
+
+## Markets and data
+
+Solanna covers US stocks and China A shares. Market data comes from Tencent, Sina, Eastmoney and Yahoo, with fallback when a source fails.
+
+News collection uses Google News RSS, Eastmoney News, Google News and Yahoo. Some sources are opened through a local browser when a page requires JavaScript. All requests go directly from your machine to the public data source.
+
+Market data may be delayed, incomplete or unavailable when a third party source changes or blocks access.
+
+## AI providers
+
+* **OpenAI.** Cloud models through the OpenAI API.
+* **Anthropic.** Claude models through the Anthropic API.
+* **DeepSeek.** Cloud models through an OpenAI compatible endpoint.
+* **GLM.** Zhipu models through an OpenAI compatible endpoint.
+* **Ollama.** Local models served from `http://127.0.0.1:11434` by default.
+
+Models can be assigned per role. Use a stronger model for core analysis and a smaller or cheaper model for news tagging and chat. Keys, endpoints and model choices are stored locally.
+
+Solanna does not proxy requests or host models. Analysis requests go from your machine to the provider you configure.
 
 ## Architecture
 
-Solanna uses a strictly unidirectional three-layer architecture:
+Solanna uses a strictly unidirectional three layer architecture.
 
 ```text
 React UI  ->  Tauri Core (Rust)  ->  Sidecar (Bun)
 ```
 
-- **Frontend (`src/`):** React, TypeScript and Vite. All IPC goes through a single entry point; local history is stored in SQLite via `tauri-plugin-sql`.
-- **Tauri Core (`src-tauri/`):** exposes one generic `invoke_sidecar` command, handles process lifecycle and keeps business logic out of Rust.
-- **Sidecar (`sidecar/`):** a compiled Bun binary that scrapes news, computes quantitative metrics and communicates with AI providers.
+* **Frontend.** React 19, TypeScript and Vite. All IPC goes through `src/lib/ipc.ts`. Local history uses SQLite through `tauri-plugin-sql`.
+* **Tauri core.** Exposes a generic `invoke_sidecar` command, manages process lifetime and keeps business logic out of Rust.
+* **Sidecar.** A compiled Bun binary that collects news, computes quantitative metrics, runs backtests and calls AI providers.
+* **Shared contracts.** The `shared` directory is the single source of truth for DTOs, action names, provider profiles and market detection.
 
-The `shared/` directory is the single source of truth for DTOs, CLI actions, provider profiles and market detection across all three layers.
+Settings and provider keys live in the app data directory. Analysis history, portfolio positions and investor signals live in SQLite.
 
 ## Configuration
 
-Open **Settings** in the app, choose an AI provider and enter your API key. Configuration and keys are stored locally through `tauri-plugin-store`.
+Open Settings and choose a provider. Each provider has fields for an API key, an endpoint and a model. Keys are stored in the local app data directory through `tauri-plugin-store`.
 
-Solanna does not proxy requests or host any models. Analysis requests go directly from your machine to the provider you configure.
+General settings control the interface language, automatic analysis on stock switch and deep mode. Deep mode fetches full article text during analysis. It is slower but produces more complete context. Automatic analysis is off by default to avoid unintended token use.
 
-## Project structure
+Model settings can assign a provider and model to three roles. Core analysis handles basic AI analysis, investor agents and final synthesis. Quick tagging classifies news sentiment. Chat answers follow up questions against the loaded context.
+
+Solanna does not require an account or a Solanna hosted service.
+
+## Project layout
 
 ```text
-.
-├── src/                 React frontend
-├── src-tauri/           Tauri core, capabilities and migrations
-├── sidecar/             Bun sidecar, data sources and AI providers
-├── shared/              Cross-layer types and constants
-├── scripts/             Build, verification and smoke-test tooling
-└── docs/                Design notes, release notes and screenshots
+src/         React frontend, hooks, charts and views
+src-tauri/   Tauri core, capabilities and SQLite migrations
+sidecar/     Bun sidecar, data sources, agents and AI providers
+shared/      Cross layer types, actions, market rules and constants
+scripts/     Build, verification and smoke test tooling
+docs/        Design notes, release notes and screenshots
 ```
 
 ## Testing
 
 ```bash
-bun run test               # offline unit tests: Vitest + sidecar Bun tests
-bun run test:integration   # adds live-network data-source checks
-bun run test:e2e           # browser smoke test for chart rendering
-bun run format             # Biome formatter
-cd src-tauri && cargo test # Rust core tests
+bun run test
+bun run test:integration
+bun run test:e2e
+bun run format
+bunx tsc --noEmit
+cd src-tauri && cargo test
 ```
 
-The default test suite is fully offline. Network-dependent checks live in `*.integration.ts` files and run separately through the integration and scheduled data-source workflows.
+The default suite is offline and covers the frontend, the sidecar and the shared contracts. Integration tests call live data sources and run separately. The end to end smoke test starts a browser and verifies that candlesticks render.
 
-## Tech stack
-
-- **Desktop:** Tauri 2, Rust, SQLite via `tauri-plugin-sql`, signed auto-updates
-- **Frontend:** React 19, TypeScript, Tailwind CSS 4, Lightweight Charts, Lucide
-- **Sidecar:** Bun, Playwright, node-html-markdown
-- **AI:** OpenAI SDK, Anthropic SDK and Ollama, with OpenAI-compatible endpoints for DeepSeek and GLM
-- **Tooling:** Biome, Vitest, Lefthook
-
-## Contributing
-
-Contributions are welcome. Please read the [Contributing Guide](./CONTRIBUTING.md) and [Code of Conduct](./CODE_OF_CONDUCT.md) before opening a pull request.
-
-- Bug reports: [Issues](https://github.com/truongdatdev/solanna/issues)
-- Feature requests and questions: [Discussions](https://github.com/truongdatdev/solanna/discussions)
+Run `bun run format` before submitting a change. The repository includes a pre push hook for formatting, TypeScript and Rust checks.
 
 ## Security
 
-Please report vulnerabilities privately through [GitHub Security Advisories](https://github.com/truongdatdev/solanna/security/advisories/new). See [SECURITY.md](./SECURITY.md) for details.
+Solanna stores provider keys in the local app data directory. It does not run a hosted backend and does not proxy model calls. News text and analysis context are sent directly to the provider you configure.
+
+Diagnostic logs are written locally. Review them before sharing them in an issue. API keys and authentication parameters are redacted from logs, but local files can still contain sensitive research data.
+
+Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/truongdatdev/solanna/security/advisories/new). See [SECURITY.md](./SECURITY.md) for the full policy.
+
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](./CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) before opening a pull request. For a large change, open an issue first so the approach can be discussed.
+
+## Support
+
+Questions and bug reports can be filed in the [GitHub issue tracker](https://github.com/truongdatdev/solanna/issues). Security issues should follow the private process in [SECURITY.md](./SECURITY.md).
 
 ## License
 
-[MIT](./LICENSE) © 2026 truongdatdev
+MIT. See [LICENSE](LICENSE).
 
 ## Disclaimer
 
-Solanna is a research and educational tool. Its output, including AI-generated ratings, master consensus, quantitative scores and backtest results, is not investment advice. Market data comes from public third-party sources and may be delayed, incomplete or incorrect. You are solely responsible for your investment decisions.
-
+Solanna is a research and educational tool. Its output, including AI ratings, investor consensus, quantitative scores and backtest results, is not investment advice. Market data comes from public third party sources and may be delayed, incomplete or incorrect. You are responsible for your own investment decisions.
