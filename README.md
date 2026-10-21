@@ -1,5 +1,8 @@
 ﻿<p align="center">
-  <img src="./public/solanna-logo.svg" alt="Solanna logo" width="88" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./public/solanna-logo-dark.svg">
+    <img src="./public/solanna-logo.svg" alt="Solanna logo" width="88" />
+  </picture>
 </p>
 
 <h1 align="center">Solanna</h1>
